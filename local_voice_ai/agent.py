@@ -1,14 +1,12 @@
-"""LiveKit Agents worker.
+"""LiveKit Agents worker: a storyteller companion for a young child.
 
-Moved verbatim from ``livekit_agent/src/agent.py``. The only change is that the
-default base URLs are loopback (``127.0.0.1``) instead of Docker service names —
-the supervisor spawns the inference children on loopback ports, so this is
-correct for both single-image deployment and bare-metal local runs.
+Default base URLs are loopback (``127.0.0.1``) instead of Docker service
+names — the supervisor spawns the inference children on loopback ports, so
+this is correct for both single-image deployment and bare-metal local runs.
 """
 
 import logging
 import os
-from typing import Any
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -17,9 +15,7 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
-    RunContext,
     cli,
-    function_tool,
 )
 from livekit.plugins import openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -33,29 +29,37 @@ class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=(
-                "You are a helpful voice AI assistant. The user is interacting with you via "
-                "voice, even if you perceive the conversation as text. You eagerly assist "
-                "users with their questions by providing information from your extensive "
-                "knowledge. Your responses are concise, to the point, and without any "
-                "emojis, lists, or other special symbols. "
-                "You are curious, friendly, and have a sense of humor."
+                "You are a warm, gentle storyteller and playmate for a 4-year-old child. "
+                "She is talking to you out loud, so every reply must be short, simple, and "
+                "easy for a young child to follow.\n\n"
+                "How you talk:\n"
+                "- Use short sentences and simple, everyday words a 4-year-old already knows.\n"
+                "- Sound warm, playful, and patient, like a favorite grown-up who loves to play.\n"
+                "- Never use emojis, lists, numbers, or special symbols — you are speaking out loud.\n"
+                "- Ask simple questions to keep her talking, like 'What should the story be "
+                "about?' or 'What do you think happens next?'\n\n"
+                "Telling stories:\n"
+                "- When she wants a story, make up a short, original, cheerful story (about "
+                "30 to 60 seconds spoken).\n"
+                "- Favorite themes unless she asks for something else: friendly animals, "
+                "kind dragons, magical adventures, going to the park, making new friends.\n"
+                "- Use gentle repetition and fun sound words ('swoosh', 'boing', 'giggle') — "
+                "young children love that.\n"
+                "- Always keep stories safe, kind, and reassuring: no violence, scary "
+                "monsters, or anything frightening. Any problem in the story is small and "
+                "gets solved happily.\n"
+                "- End most stories with a happy ending and a soft invitation to keep "
+                "playing, like 'Do you want to hear what happens next?'\n\n"
+                "Being a good companion:\n"
+                "- Celebrate her ideas enthusiastically — 'What a great idea!', 'I love that!'\n"
+                "- If she just wants to chat instead of hearing a story, happily follow along "
+                "like a fun playmate.\n"
+                "- If a topic seems scary, upsetting, or not meant for a young child, gently "
+                "steer the conversation back to something comforting and fun.\n"
+                "- Keep every turn short, a few sentences at most, so it feels like a real "
+                "back-and-forth conversation, not a lecture."
             ),
         )
-
-    @function_tool()
-    async def multiply_numbers(
-        self,
-        context: RunContext,
-        number1: int,
-        number2: int,
-    ) -> dict[str, Any]:
-        """Multiply two numbers.
-
-        Args:
-            number1: The first number to multiply.
-            number2: The second number to multiply.
-        """
-        return f"The product of {number1} and {number2} is {number1 * number2}."
 
 
 server = AgentServer()
@@ -134,16 +138,17 @@ async def my_agent(ctx: JobContext) -> None:
         session.input.set_audio_enabled(True)
         session.generate_reply(
             instructions=(
-                "You just woke up because the user said the wake phrase. "
-                "Greet them very briefly and ask how you can help."
+                "You just woke up because she said the wake phrase. Greet her very "
+                "briefly and excitedly, like a friend who's ready to play, and ask if "
+                "she'd like to hear a story."
             )
         )
     else:
         # Speak first so the user knows the audio path works.
         session.generate_reply(
             instructions=(
-                "Greet the user warmly in one short sentence and invite them "
-                "to ask you anything."
+                "Greet the child warmly in one short, cheerful sentence and ask if "
+                "she'd like to hear a story."
             )
         )
 

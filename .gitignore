@@ -8,3 +8,11 @@ inference/llama/models/
 
 # Packaging metadata from editable installs (pip install -e / uv sync)
 *.egg-info/
+
+# Local secret overrides — .env ships committed local-dev defaults (no real
+# secrets); .env.local is for personal overrides (loaded by
+# local_voice_ai/agent.py's load_dotenv) and must never be committed.
+.env.local
+.env.*.local
+*.pem
+*.key

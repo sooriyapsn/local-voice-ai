@@ -102,7 +102,7 @@ class Config:
 
     # --- TTS (Kokoro) ---------------------------------------------------
     tts_base_url: str = "http://127.0.0.1:8880/v1"
-    tts_voice: str = "af_nova"
+    tts_voice: str = "af_heart"
     tts_api_key: str = "no-key-needed"
     tts_bind_port: int = 8880
     manage_tts: bool = True
