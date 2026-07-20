@@ -155,8 +155,13 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
                 argv=[
                     livekit_bin,
                     "--dev",
-                    "--bind", "0.0.0.0",
-                    "--port", str(cfg.livekit_bind_port),
+                    # Signaling/HTTP listener only — RTC transport ports
+                    # (below) bind broadly regardless of --bind, verified
+                    # empirically against this livekit-server build, so
+                    # restricting this one to loopback under HTTPS (Caddy
+                    # then claims the external port) doesn't affect them.
+                    "--bind", cfg.livekit_bind_host,
+                    "--port", str(cfg.livekit_internal_port),
                     # livekit-server's RTC TCP port flag is the dotted config
                     # key --rtc.tcp_port (there is no --rtc-port flag).
                     "--rtc.tcp_port", str(cfg.livekit_rtc_port),
@@ -292,6 +297,36 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
             )
         )
 
+    # --- Caddy (HTTPS front door, LAN-only local CA) ------------------
+    if cfg.enable_https:
+        specs.append(
+            ChildSpec(
+                name="caddy",
+                argv=[
+                    os.getenv("CADDY_BIN", "caddy"),
+                    "run",
+                    "--config", os.getenv("CADDY_CONFIG", "/app/Caddyfile"),
+                    "--adapter", "caddyfile",
+                ],
+                env={
+                    # Caddy's local CA + issued certs live here, persisted
+                    # via the /data volume so they survive restarts —
+                    # otherwise every restart mints a new CA and every
+                    # device would need re-trusting it again.
+                    "XDG_DATA_HOME": "/data",
+                    "WEB_EXTERNAL_PORT": str(cfg.web_port),
+                    "WEB_INTERNAL_PORT": str(cfg.web_bind_port),
+                    "LIVEKIT_EXTERNAL_PORT": str(cfg.livekit_bind_port),
+                    "LIVEKIT_INTERNAL_PORT": str(cfg.livekit_internal_port),
+                },
+                # Caddy has no simple unauthenticated health endpoint with
+                # `admin off`; give it a moment to bind and issue its
+                # internal-CA cert on first run, then treat it as up.
+                ready_url=None,
+                ready_timeout=30.0,
+            )
+        )
+
     # --- Agent worker ------------------------------------------------
     specs.append(
         ChildSpec(
@@ -321,8 +356,8 @@ async def _serve(cfg: Config) -> int:
     app = build_app(cfg, status_provider=status_provider)
     uv_config = uvicorn.Config(
         app,
-        host=cfg.web_host,
-        port=cfg.web_port,
+        host=cfg.web_bind_host,
+        port=cfg.web_bind_port,
         log_level=cfg.log_level.lower(),
         access_log=False,
     )
@@ -385,16 +420,18 @@ async def _serve(cfg: Config) -> int:
         preview_prewarm_task.add_done_callback(_background_tasks.discard)
 
         # The line first-time users are looking for — make it unmissable.
+        scheme = "https" if cfg.enable_https else "http"
         logger.info(
             "\n\n"
             "  ┌────────────────────────────────────────────────┐\n"
             "  │                                                │\n"
-            "  │   ✅  local-voice-ai is ready                  │\n"
+            "  │   ✅  story-teller is ready                    │\n"
             "  │                                                │\n"
-            "  │   👉  Open  http://localhost:%-5d             │\n"
+            "  │   👉  Open  %s://localhost:%-5d             │\n"
             "  │       and click “Start call”                   │\n"
             "  │                                                │\n"
             "  └────────────────────────────────────────────────┘\n",
+            scheme,
             cfg.web_port,
         )
         done, _ = await asyncio.wait(

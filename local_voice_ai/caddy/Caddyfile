@@ -1,0 +1,31 @@
+# TLS front door for a LAN-only deployment (ENABLE_HTTPS=1): terminates
+# HTTPS/WSS using Caddy's own local CA (no public domain, no Let's Encrypt)
+# and proxies to the web/API and LiveKit signaling services, which bind
+# loopback-only in this mode. See README's "HTTPS" section for the one-time
+# step to trust this CA on your devices.
+{
+	admin off
+}
+
+:{$WEB_EXTERNAL_PORT} {
+	# on_demand: these site blocks have no hostname (just a port), so Caddy
+	# has nothing to issue a cert for at startup — a bare TLS ClientHello
+	# with no matching SAN otherwise fails with a generic "internal error"
+	# alert (confirmed empirically). on_demand defers issuance to the first
+	# real handshake, using whatever SNI/IP the client actually connects
+	# with. Caddy warns this is unsafe without rate-limiting/an `ask`
+	# endpoint — that protection exists against public-internet abuse of a
+	# real CA's issuance quota; there's no such cost here since this is
+	# Caddy's own local CA never presented to a real certificate authority.
+	tls internal {
+		on_demand
+	}
+	reverse_proxy 127.0.0.1:{$WEB_INTERNAL_PORT}
+}
+
+:{$LIVEKIT_EXTERNAL_PORT} {
+	tls internal {
+		on_demand
+	}
+	reverse_proxy 127.0.0.1:{$LIVEKIT_INTERNAL_PORT}
+}

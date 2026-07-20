@@ -42,6 +42,15 @@ def _is_loopback(url: str) -> bool:
     return host in {"", "localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
+# Internal-only bind ports used exclusively when ENABLE_HTTPS=1: Caddy takes
+# over the externally-published port numbers (web_port, livekit_bind_port)
+# and terminates TLS there, so the actual web/livekit-signaling processes
+# move to these fixed loopback-only ports instead. Not user-configurable —
+# nothing outside this container ever needs to know they exist.
+_INTERNAL_WEB_PORT = 8790
+_INTERNAL_LIVEKIT_PORT = 17880
+
+
 @dataclass
 class Config:
     # --- Web (FastAPI in the supervisor process) -------------------------
@@ -133,19 +142,62 @@ class Config:
     # --- Device ---------------------------------------------------------
     device: str = "cpu"  # cpu | cuda | mps
 
+    # --- HTTPS (Caddy, LAN-only local CA) --------------------------------
+    # When on, Caddy fronts the web port and LiveKit's signaling port with
+    # TLS (its own local CA — see README's "HTTPS" section), and the actual
+    # web/livekit processes move to internal-only loopback ports so Caddy can
+    # claim the externally-published numbers. The WebRTC media ports
+    # (livekit_rtc_port, livekit_udp_port) are untouched either way — a
+    # reverse proxy can't carry WebRTC media, only the HTTP/WS signaling.
+    enable_https: bool = False
+
     # --- Misc -----------------------------------------------------------
     log_level: str = "INFO"
 
     @property
+    def web_bind_host(self) -> str:
+        return "127.0.0.1" if self.enable_https else self.web_host
+
+    @property
+    def web_bind_port(self) -> int:
+        return _INTERNAL_WEB_PORT if self.enable_https else self.web_port
+
+    @property
+    def livekit_bind_host(self) -> str:
+        return "127.0.0.1" if self.enable_https else "0.0.0.0"
+
+    @property
+    def livekit_internal_port(self) -> int:
+        """The port livekit-server's signaling/HTTP listener actually binds
+        to. Equals livekit_bind_port unless Caddy has claimed that number."""
+        return _INTERNAL_LIVEKIT_PORT if self.enable_https else self.livekit_bind_port
+
+    @property
     def public_livekit_url(self) -> str:
-        """The serverUrl minted into browser tokens: livekit_public_url if set,
-        else livekit_url."""
-        return self.livekit_public_url or self.livekit_url
+        """The serverUrl minted into browser tokens: livekit_public_url if
+        explicitly set, else derived from livekit_url — except under HTTPS,
+        where livekit_url points at LiveKit's now-internal-only port (see
+        livekit_internal_port), so the browser default must instead point at
+        Caddy's externally-published port over wss."""
+        if self.livekit_public_url:
+            return self.livekit_public_url
+        if self.enable_https:
+            return f"wss://127.0.0.1:{self.livekit_bind_port}"
+        return self.livekit_url
 
     @classmethod
     def from_env(cls) -> "Config":
         """Build the config from ``os.environ`` with sane defaults."""
-        livekit_url = os.getenv("LIVEKIT_URL", cls.livekit_url)
+        enable_https = _env_bool("ENABLE_HTTPS", cls.enable_https)
+        livekit_bind_port = int(os.getenv("LIVEKIT_BIND_PORT", str(cls.livekit_bind_port)))
+        # The agent's own connection to LiveKit is always loopback — under
+        # HTTPS that means the internal-only port Caddy proxies to, not the
+        # externally-published number (see livekit_internal_port).
+        default_livekit_port = _INTERNAL_LIVEKIT_PORT if enable_https else livekit_bind_port
+        # `or`, not os.getenv's default arg: docker-compose's ${LIVEKIT_URL:-}
+        # passthrough defines-but-empty when unset in .env, which the default
+        # arg wouldn't catch (same pattern as indic_tts_base_url below).
+        livekit_url = os.getenv("LIVEKIT_URL") or f"ws://127.0.0.1:{default_livekit_port}"
         llama_base_url = os.getenv("LLAMA_BASE_URL", cls.llama_base_url)
         stt_base_url = os.getenv("STT_BASE_URL")
         tts_base_url = os.getenv("TTS_BASE_URL", cls.tts_base_url)
@@ -173,7 +225,7 @@ class Config:
             livekit_url=livekit_url,
             livekit_api_key=os.getenv("LIVEKIT_API_KEY", cls.livekit_api_key),
             livekit_api_secret=os.getenv("LIVEKIT_API_SECRET", cls.livekit_api_secret),
-            livekit_bind_port=int(os.getenv("LIVEKIT_BIND_PORT", str(cls.livekit_bind_port))),
+            livekit_bind_port=livekit_bind_port,
             livekit_rtc_port=int(os.getenv("LIVEKIT_RTC_PORT", str(cls.livekit_rtc_port))),
             livekit_udp_port=int(os.getenv("LIVEKIT_UDP_PORT", str(cls.livekit_udp_port))),
             livekit_node_ip=os.getenv("LIVEKIT_NODE_IP", cls.livekit_node_ip),
@@ -223,6 +275,7 @@ class Config:
             ),
             #
             device=os.getenv("DEVICE", cls.device).lower(),
+            enable_https=enable_https,
             log_level=os.getenv("LOG_LEVEL", cls.log_level).upper(),
         )
 

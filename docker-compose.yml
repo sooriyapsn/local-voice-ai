@@ -12,7 +12,13 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: ${LIVEKIT_URL:-ws://127.0.0.1:7880}
+      # No hardcoded default here: Config.from_env() computes the right
+      # default itself (it depends on ENABLE_HTTPS — see config.py). Only
+      # meant to be set when the operator wants an explicit override (e.g.
+      # LiveKit Cloud); config.py reads it with `os.getenv(...) or default`
+      # so a set-but-empty passthrough (the ${VAR:-} below, when unset in
+      # .env) still falls through to that computed default.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
       # For browsers on another device (e.g. a tablet over Wi-Fi): the
@@ -37,19 +43,36 @@ services:
       INDIC_TTS_BASE_URL: ${INDIC_TTS_BASE_URL:-}
       # Gates the parent settings panel (time limit, custom story/lesson).
       PARENT_PIN: ${PARENT_PIN:-1234}
+      # HTTPS via Caddy (LAN-only local CA) — see README's "HTTPS" section.
+      # When on, Caddy claims WEB_PORT/LIVEKIT_BIND_PORT for TLS and the
+      # underlying processes move to internal-only ports; the RTC-over-TCP
+      # fallback (LIVEKIT_RTC_PORT) is dropped from external publishing
+      # below since it isn't needed once HTTPS/wss signaling works (a plain
+      # UDP media path is normal for self-hosted LiveKit either way).
+      ENABLE_HTTPS: ${ENABLE_HTTPS:-}
     ports:
-      # Container-side must track WEB_PORT too: env_file loads it into the
-      # app's own environment, and it binds uvicorn to that port internally.
+      # Container-side must track WEB_PORT/LIVEKIT_BIND_PORT too: whichever
+      # process ends up owning that number internally (Caddy when HTTPS is
+      # on, the service itself otherwise) binds exactly that port.
       - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
-      - "${LIVEKIT_BIND_PORT:-7880}:7880"
-      - "${LIVEKIT_RTC_PORT:-7881}:7881"
+      - "${LIVEKIT_BIND_PORT:-7880}:${LIVEKIT_BIND_PORT:-7880}"
       # WebRTC media over UDP. The host port must equal the container port
       # because LiveKit advertises this exact port in its ICE candidates.
+      # Can't be hidden behind Caddy — a reverse proxy doesn't carry WebRTC
+      # media, only the HTTP/WS signaling above.
       - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
     volumes:
       - models:/models
+      - caddy_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz > /dev/null"]
+      test:
+        - CMD-SHELL
+        - >-
+          if [ "$$ENABLE_HTTPS" = "1" ]; then
+            curl -fsSk https://127.0.0.1:${WEB_PORT:-8080}/healthz > /dev/null;
+          else
+            curl -fsS http://127.0.0.1:${WEB_PORT:-8080}/healthz > /dev/null;
+          fi
       interval: 10s
       timeout: 5s
       retries: 30
@@ -57,3 +80,4 @@ services:
 
 volumes:
   models:
+  caddy_data:

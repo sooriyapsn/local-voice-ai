@@ -17,6 +17,7 @@
 ARG LLAMA_IMAGE=ghcr.io/ggml-org/llama.cpp:server
 ARG LIVEKIT_IMAGE=livekit/livekit-server:latest
 ARG PYTHON_BASE=python:3.11-slim
+ARG CADDY_IMAGE=caddy:2-alpine
 
 # ---------------- frontend ----------------
 FROM node:20-slim AS frontend
@@ -41,6 +42,7 @@ RUN mkdir -p /cuda-libs \
       [ -e "$lib" ] && cp -a "$lib" /cuda-libs/ || true; \
     done
 FROM ${LIVEKIT_IMAGE} AS livekit-bin
+FROM ${CADDY_IMAGE} AS caddy-bin
 
 # ---------------- runtime ----------------
 FROM ${PYTHON_BASE} AS runtime
@@ -98,6 +100,8 @@ RUN ln -s /usr/local/lib/llama/llama-server /usr/local/bin/llama-server \
     && echo /usr/local/lib/llama > /etc/ld.so.conf.d/llama.conf \
     && ldconfig
 COPY --from=livekit-bin /livekit-server /usr/local/bin/livekit-server
+COPY --from=caddy-bin /usr/bin/caddy /usr/local/bin/caddy
+COPY local_voice_ai/caddy/Caddyfile /app/Caddyfile
 
 # Drop in the static-exported frontend
 COPY --from=frontend /app/out /app/frontend/out
@@ -111,7 +115,10 @@ ADD https://github.com/livekit-examples/hello-wakeword/raw/main/client/models/he
     /app/models/wakeword/hey_livekit.onnx
 
 EXPOSE 8080 7880 7881 7882/udp
-VOLUME ["/models"]
+# /data holds Caddy's local CA + issued certs (see ENABLE_HTTPS) — persisted
+# so the CA survives restarts; otherwise every restart would mint a new one
+# and you'd have to re-trust it on every device again.
+VOLUME ["/models", "/data"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "-m", "local_voice_ai", "serve"]

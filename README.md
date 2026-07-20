@@ -17,13 +17,34 @@ Everything runs as managed children of one Python supervisor (`python -m local_v
 
 Children speak HTTP only over `127.0.0.1`. The image exposes four ports: `8080` (web), `7880`, `7881`, `7882/udp` (LiveKit WebRTC, only if running locally).
 
+## System requirements
+
+Everything below is CPU-only by default; a GPU is optional (see [GPU (NVIDIA)](#gpu-nvidia)). Numbers marked "measured" come from `docker stats` on a real running instance with every child warm (STT + LLM + Kokoro TTS + Telugu/Marathi TTS all loaded at once) — that's the ceiling, not the typical moment-to-moment load. Numbers marked "estimated" are reasoned from the architecture (four concurrent inference services), not lab-tested against a range of hardware, since this project only runs on one dev machine.
+
+**Hardware**
+
+| Resource | Minimum | Recommended |
+| --- | --- | --- |
+| CPU | 4 cores, x86_64 with **AVX2** (any Intel/AMD from ~2013 onward) or Apple Silicon | 8+ cores — llama.cpp runs several parallel inference slots, and STT/LLM/TTS all do real work on the same turn |
+| RAM | 8 GB (English-only, `STT_PROVIDER=whisper` with a small model) | 16 GB — measured ~11.5 GB RSS with Nemotron STT + Telugu/Marathi TTS all loaded |
+| Disk | 20 GB free | 25 GB+ — ~6.5 GB Docker image, plus ~8 GB model weights (English-only: Nemotron + Kokoro + the default LLM) growing to ~10 GB with `ENABLE_INDIC_TTS=1` (adds Telugu + Marathi models) |
+| Network | None required — fully offline after first-boot model download | — |
+
+GPU acceleration (`docker-compose.gpu.yml`) needs an NVIDIA GPU with the [container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed; VRAM needs scale with how much of the LLM you offload (`LLAMA_N_GPU_LAYERS`, default `999` = full offload for the ~2.6 GB default model).
+
+**Software**
+
+- Docker Engine + the Compose plugin (`docker compose`, not the standalone `docker-compose`) — this is the only supported path; see [Local development](#local-development-no-docker) for the non-Docker alternative.
+- Linux or macOS. On Apple Silicon the prebuilt image runs natively but CPU-only (Docker Desktop's VM has no Metal passthrough) — for GPU inference on a Mac, use [Local development](#local-development-no-docker) instead, where `llama-server` picks up Metal automatically.
+- amd64 and arm64 images are both published; no architecture-specific setup needed either way.
+
 ## Getting started
 
 Run the prebuilt image (amd64 + arm64):
 
 ```bash
 docker run --rm -it \
-  -p 8080:8080 -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  -p 8080:8080 -p 7880:7880 -p 7882:7882/udp \
   -v story-teller-models:/models \
   ghcr.io/sooriyapsn/story-teller:latest
 ```
@@ -53,6 +74,53 @@ The prebuilt image runs natively (arm64), but **CPU-only** — Docker on macOS i
 VM with no Metal access. For GPU (Metal) inference, run bare-metal via
 [Local development](#local-development-no-docker) below, where `llama-server`
 picks up Metal automatically.
+
+## HTTPS
+
+Off by default (plain HTTP, matching `docker run`/`docker compose up` above). For
+a LAN deployment (laptop + a tablet on the same Wi-Fi — no public domain needed),
+set `ENABLE_HTTPS=1` in `.env` and rebuild:
+
+```bash
+ENABLE_HTTPS=1  # add to .env, then:
+docker compose up --build
+```
+
+This adds [Caddy](https://caddyserver.com/) as another supervised child, running
+its own local CA and terminating TLS in front of the web/API traffic and LiveKit's
+signaling connection — both on the *same* port numbers as before (`WEB_PORT`,
+`LIVEKIT_BIND_PORT`), just now speaking `https`/`wss`. Nothing else about your
+setup changes: same URLs, same ports, same `docker compose` commands.
+
+**What HTTPS does and doesn't cover here:** voice audio itself is already
+end-to-end encrypted regardless (WebRTC always encrypts media via DTLS-SRTP) —
+what this actually protects is the web page, the API, and the parent PIN, which
+otherwise travel as plain HTTP on your home Wi-Fi. The WebRTC media port
+(`LIVEKIT_UDP_PORT`, default `7882/udp`) can't be hidden behind a reverse proxy
+either way — that's inherent to how WebRTC works, not a Caddy limitation — so it
+stays published as plain UDP, same as always. The RTC-over-TCP fallback port
+(`7881`) is dropped from external publishing in HTTPS mode, since it's rarely
+needed on a healthy LAN once the browser is already reaching everything else
+over `wss`.
+
+**One-time step per device:** because this is a local CA (not a real, publicly
+trusted one — there's no domain to validate against), each browser will show a
+"not secure" warning until you trust Caddy's root certificate once:
+
+```bash
+docker compose exec app cat /data/caddy/pki/authorities/local/root.crt
+```
+
+Copy that output to each device (laptop, tablet) and add it to the OS/browser's
+trusted root certificates. After that, `https://<this-machine's-address>:8091`
+(or your `WEB_PORT`) shows a normal, trusted padlock on every device — no more
+warnings, and no per-restart re-trust needed (the CA persists in the `caddy_data`
+volume).
+
+If you'd rather have a real, publicly-trusted certificate with zero manual trust
+steps anywhere, that needs a domain name pointed at this machine and port `443`
+reachable from the internet — a materially different (and, for a home app,
+usually unnecessary) setup than what's documented here.
 
 ## Swapping in cloud providers
 
@@ -91,6 +159,7 @@ cd frontend && pnpm install && pnpm run dev
 │  ├── child: llama-server       (skipped if LLAMA_BASE_URL ext.)  │
 │  ├── child: nemotron | whisper (skipped if STT_BASE_URL ext.)    │
 │  ├── child: kokoro             (skipped if TTS_BASE_URL ext.)    │
+│  ├── child: caddy              (only if ENABLE_HTTPS=1)          │
 │  ├── child: livekit-agents worker                                │
 │  └── in-process: FastAPI on :8080                                 │
 │        ├── POST /api/connection-details  (token minting)         │
@@ -110,6 +179,7 @@ cd frontend && pnpm install && pnpm run dev
 │  ├─ api.py               # FastAPI: token route, status, static frontend
 │  ├─ agent.py             # LiveKit Agents worker
 │  ├─ wakeword.py          # optional "hey livekit" gate for the agent
+│  ├─ caddy/Caddyfile      # HTTPS front door (ENABLE_HTTPS=1 only)
 │  └─ services/
 │     ├─ nemotron/server.py
 │     ├─ whisper/server.py
@@ -134,6 +204,7 @@ See `.env` for the full list. The most important ones:
 - `STT_PROVIDER` (`nemotron`|`whisper`), `STT_BASE_URL`, `STT_MODEL`; `WHISPER_MODEL` picks the faster-whisper model for the whisper provider.
 - `TTS_BASE_URL`, `TTS_VOICE`
 - `WEB_PORT` (default `8080`)
+- `ENABLE_HTTPS=1` — fronts the web/API and LiveKit signaling with Caddy + a local CA (see [HTTPS](#https)). `PARENT_PIN` (default `1234`) gates the parent settings panel.
 - `MANAGE_LIVEKIT`, `MANAGE_LLAMA`, `MANAGE_STT`, `MANAGE_TTS` — explicit overrides for the auto-detected "is the URL external?" logic.
 
 ## Credits
