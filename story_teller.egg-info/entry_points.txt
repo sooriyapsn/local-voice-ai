@@ -1,0 +1,2 @@
+[console_scripts]
+story-teller = local_voice_ai.__main__:main

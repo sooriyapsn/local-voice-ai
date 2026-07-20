@@ -1,19 +1,11 @@
 """Character registry: personas, TTS voices, and intro lines for the three
-selectable storyteller characters.
+selectable storyteller characters. Selection rides along as JSON in the
+LiveKit room's metadata (see api.py::_mint_token, agent.py::my_agent).
 
-Each character shares the same storytelling ground rules (short sentences,
-safe/kind content, no lists or symbols) but layers on a distinct vocal
-personality. The frontend lets the child pick one before a call starts; the
-choice is threaded through as JSON in the LiveKit room's metadata (see
-``api.py::_mint_token`` and ``agent.py::my_agent``).
-
-The Telugu and Marathi intro lines (``intro_line_te`` / ``intro_line_mr``)
-are a non-native-speaker's best-effort translation, not verified by a fluent
-speaker — worth a native-speaker review before leaning on them for a child's
-actual language learning. Unlike the English/Kokoro voices, Telugu and
-Marathi speech uses a single shared MMS voice per language (see
-services/indic_tts/server.py), so all three characters sound the same when
-speaking those languages; only the words said differ per character.
+The Telugu/Marathi intro lines are a non-native-speaker's best-effort
+translation — worth a native review before relying on them for language
+learning. Telugu/Marathi both use one shared MMS voice regardless of
+character (see services/indic_tts/server.py); only the words differ.
 """
 
 from __future__ import annotations
@@ -68,13 +60,9 @@ class Character:
         return self.intro_line
 
 
-# Appended to a character's English instructions when a non-English language
-# is selected — the character definitions themselves stay English-only (one
-# persona, not three per language) and this layers the language behavior on
-# top, leaning on the LLM's own multilingual generation rather than hand
-# translating each persona. Fluency is unverified for this small quantized
-# model; if Telugu/Marathi output reads poorly, that's the next thing to
-# check, separate from the TTS/voice pipeline this integration adds.
+# Appended to a character's (English) instructions rather than hand-translating
+# each persona — leans on the LLM's own multilingual generation, unverified
+# for fluency on this small model.
 LANGUAGE_DIRECTIVES: dict[str, str] = {
     "te": (
         "\n\nSpeak primarily in Telugu (తెలుగు) for this whole conversation — "
@@ -93,9 +81,18 @@ LANGUAGE_DIRECTIVES: dict[str, str] = {
 }
 
 
-def instructions_for(character: Character, language: str) -> str:
+def instructions_for(character: Character, language: str, custom_story: str = "") -> str:
     directive = LANGUAGE_DIRECTIVES.get(language, "")
-    return character.instructions + directive
+    story_directive = ""
+    if custom_story:
+        story_directive = (
+            "\n\nHer grown-up shared this story or lesson for you to teach her, in "
+            "your own words and voice, staying fully in character. Weave it into "
+            "the conversation naturally when it fits, explain any concepts simply "
+            "for a 4-year-old, and check she's following along:\n"
+            f'"""\n{custom_story}\n"""'
+        )
+    return character.instructions + directive + story_directive
 
 
 RED_ONE = Character(

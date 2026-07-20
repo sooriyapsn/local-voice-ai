@@ -35,7 +35,6 @@ function BalloonShape({ color, width }: { color: string; width: number }) {
       fill="none"
       className="drop-shadow-sm"
     >
-      {/* string */}
       <path
         d="M50 118 Q46 130 50 140 Q54 150 50 158"
         stroke={color}
@@ -43,11 +42,8 @@ function BalloonShape({ color, width }: { color: string; width: number }) {
         fill="none"
         opacity="0.6"
       />
-      {/* knot */}
       <path d="M46 112 L54 112 L50 120 Z" fill={color} />
-      {/* body */}
       <ellipse cx="50" cy="62" rx="48" ry="58" fill={color} />
-      {/* shine */}
       <ellipse cx="34" cy="38" rx="12" ry="18" fill="white" opacity="0.35" />
     </svg>
   );
@@ -56,52 +52,56 @@ function BalloonShape({ color, width }: { color: string; width: number }) {
 function Balloon({ initialDelay }: { initialDelay: number }) {
   const [cycle, setCycle] = useState(0);
   const [popped, setPopped] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- cycle is a re-randomize trigger
   const config = useMemo(() => randomBalloonConfig(), [cycle]);
   const delay = cycle === 0 ? initialDelay : 0;
 
   return (
+    // Position (rise) and pop (scale/opacity) are animated on separate
+    // elements: sharing one element caused the pop's scale to originate from
+    // the SVG's full bounding box (which includes the string below the
+    // balloon), making it look like it sank instead of popping in place.
     <motion.div
       key={cycle}
       className="pointer-events-none absolute bottom-0"
       style={{ left: `${config.leftPercent}%` }}
-      initial={{ y: 0, opacity: 0, scale: 1 }}
-      animate={
-        popped
-          ? { scale: [1, 1.35, 0], opacity: [1, 1, 0] }
-          : { y: `-${config.popAtPercent}vh`, opacity: [0, 0.3, 0.3, 0.3] }
-      }
+      initial={{ y: 0 }}
+      animate={popped ? {} : { y: `-${config.popAtPercent}vh` }}
       transition={
-        popped
-          ? { duration: 0.25, ease: 'easeOut' }
-          : { duration: config.riseDuration, delay, ease: 'linear' }
+        popped ? { duration: 0 } : { duration: config.riseDuration, delay, ease: 'linear' }
       }
       onAnimationComplete={() => {
-        if (!popped) {
-          setPopped(true);
-        } else {
-          setPopped(false);
-          setCycle((c) => c + 1);
-        }
+        if (!popped) setPopped(true);
       }}
     >
-      <BalloonShape color={config.color} width={config.width} />
+      <motion.div
+        style={{ transformOrigin: '50% 39%' }}
+        initial={{ opacity: 0, scale: 1 }}
+        animate={
+          popped ? { scale: [1, 1.4, 0], opacity: [0.3, 0.55, 0] } : { opacity: [0, 0.3, 0.3, 0.3] }
+        }
+        transition={
+          popped
+            ? { duration: 0.25, ease: 'easeOut' }
+            : { duration: config.riseDuration, delay, ease: 'linear' }
+        }
+        onAnimationComplete={() => {
+          if (popped) {
+            setPopped(false);
+            setCycle((c) => c + 1);
+          }
+        }}
+      >
+        <BalloonShape color={config.color} width={config.width} />
+      </motion.div>
     </motion.div>
   );
 }
 
 const BALLOON_COUNT = 7;
 
-/**
- * A continuous stream of semi-transparent balloons rising from the bottom of
- * the screen and popping partway up, then respawning from the bottom again —
- * a playful, ever-present background layer. Purely CSS/SVG + Framer Motion,
- * no image assets.
- */
 export function BalloonField() {
-  const delays = useMemo(
-    () => Array.from({ length: BALLOON_COUNT }, () => Math.random() * 6),
-    []
-  );
+  const delays = useMemo(() => Array.from({ length: BALLOON_COUNT }, () => Math.random() * 6), []);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       {delays.map((delay, i) => (

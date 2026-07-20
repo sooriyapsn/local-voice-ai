@@ -19,13 +19,20 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from livekit import api as lk_api
+from pypdf import PdfReader
 
 from .characters import CHARACTERS, get_character
 from .config import Config
+from .parent_settings import (
+    STORY_TEXT_MAX_CHARS,
+    load_settings,
+    save_settings,
+    verify_pin,
+)
 
 logger = logging.getLogger("api")
 
@@ -37,8 +44,13 @@ logger = logging.getLogger("api")
 _PREVIEW_CACHE_DIR = Path(os.getenv("HF_HOME", "/tmp")) / "character-previews"
 
 
+_SUPPORTED_LANGUAGES = ("en", "te", "mr")
+
+
 async def _synthesize_and_cache_preview(cfg: Config, character_id: str, language: str = "en") -> bytes:
     character = get_character(character_id)
+    if language not in _SUPPORTED_LANGUAGES:
+        language = "en"
     cache_path = _PREVIEW_CACHE_DIR / f"{character.id}.{language}.wav"
     if cache_path.is_file():
         return cache_path.read_bytes()
@@ -121,7 +133,16 @@ def _mint_token(
     # LiveKit's implicit "dispatch to any unnamed worker" default, so an
     # explicit dispatch entry — agent_name="" matches our unnamed worker —
     # must always be included alongside it, or the agent never joins.
-    room_metadata = {k: v for k, v in {"character": character, "language": language}.items() if v}
+    # The parent-set story/lesson (if any) rides along the same way — pulled
+    # server-side from the saved settings rather than trusted from the
+    # request body, so a request can't inject arbitrary text into the
+    # agent's system prompt.
+    story_text = load_settings().story_text
+    room_metadata = {
+        k: v
+        for k, v in {"character": character, "language": language, "story": story_text}.items()
+        if v
+    }
     if agent_name or room_metadata:
         token = token.with_room_config(
             lk_api.RoomConfiguration(
@@ -161,6 +182,9 @@ def build_app(
             # Lets the language picker only offer Telugu/Marathi when the
             # (optional, off-by-default) indic_tts child is actually running.
             "languages": ["en", "te", "mr"] if cfg.indic_tts_enabled else ["en"],
+            # Public (no PIN) so the session view can enforce it client-side;
+            # the story text itself stays behind the PIN-gated endpoints.
+            "time_limit_minutes": load_settings().time_limit_minutes,
         }
 
     @app.post("/api/connection-details")
@@ -216,6 +240,71 @@ def build_app(
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/api/parent/verify-pin")
+    async def parent_verify_pin(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        pin = body.get("pin") if isinstance(body, dict) else None
+        return JSONResponse({"ok": bool(pin) and verify_pin(pin)})
+
+    @app.get("/api/parent/settings")
+    async def parent_get_settings(request: Request) -> JSONResponse:
+        if not verify_pin(request.headers.get("X-Parent-Pin") or ""):
+            raise HTTPException(status_code=401, detail="invalid pin")
+        return JSONResponse(vars(load_settings()))
+
+    @app.post("/api/parent/settings")
+    async def parent_save_settings(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict) or not verify_pin(body.get("pin") or ""):
+            raise HTTPException(status_code=401, detail="invalid pin")
+
+        settings = load_settings()
+        time_limit = body.get("time_limit_minutes")
+        if isinstance(time_limit, (int, float)) and not isinstance(time_limit, bool):
+            time_limit = round(time_limit)
+            if 5 <= time_limit <= 180:
+                settings.time_limit_minutes = time_limit
+        story_text = body.get("story_text")
+        if isinstance(story_text, str):
+            settings.story_text = story_text[:STORY_TEXT_MAX_CHARS]
+            story_title = body.get("story_title")
+            settings.story_title = story_title[:200] if isinstance(story_title, str) else ""
+        save_settings(settings)
+        return JSONResponse(vars(settings))
+
+    @app.post("/api/parent/upload-pdf")
+    async def parent_upload_pdf(request: Request) -> JSONResponse:
+        form = await request.form()
+        pin = form.get("pin")
+        if not isinstance(pin, str) or not verify_pin(pin):
+            raise HTTPException(status_code=401, detail="invalid pin")
+
+        upload = form.get("file")
+        if not isinstance(upload, UploadFile):
+            raise HTTPException(status_code=400, detail="missing file")
+
+        try:
+            reader = PdfReader(upload.file)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read PDF: {exc}") from exc
+
+        text = text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="no readable text found in PDF")
+
+        settings = load_settings()
+        settings.story_text = text[:STORY_TEXT_MAX_CHARS]
+        settings.story_title = (upload.filename or "Uploaded PDF")[:200]
+        save_settings(settings)
+        return JSONResponse(vars(settings))
 
     if cfg.frontend_dir:
         # SPA-style: serve static export, falling back to index.html for unknown paths.

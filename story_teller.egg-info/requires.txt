@@ -10,6 +10,7 @@ pydantic>=2
 numpy
 soundfile
 python-multipart
+pypdf>=4
 
 [dev]
 pytest

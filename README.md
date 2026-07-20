@@ -1,9 +1,7 @@
 <div align="center">
-  <img src="./frontend/.github/assets/template-light.webp" alt="App Icon" width="80" />
-  <h1>Local Voice Agent</h1>
-  <p>This project's goal is to enable anyone to easily build a powerful, private, local voice AI agent.</p>
-  <p>A real-time voice AI assistant — STT, LLM, TTS — running in <strong>one container</strong>, supervised by a single Python parent process. Powered by <a href="https://docs.livekit.io/agents?utm_source=local-voice-ai">LiveKit Agents</a>.</p>
-  <p>To keep up with what I'm building or request new features <a href="https://x.com/intent/follow?screen_name=ShayneParlo">send me a DM on X</a></p>
+  <h1>Story Teller</h1>
+  <p>A self-hosted, local-only voice storyteller for kids — three characters to pick from, English/Telugu/Marathi, and a PIN-gated parent dashboard for time limits and custom lessons.</p>
+  <p>Real-time voice AI — STT, LLM, TTS — running entirely in <strong>one container</strong> on your own network, supervised by a single Python parent process. Powered by <a href="https://docs.livekit.io/agents">LiveKit Agents</a>.</p>
 </div>
 
 ## Overview
@@ -26,8 +24,8 @@ Run the prebuilt image (amd64 + arm64):
 ```bash
 docker run --rm -it \
   -p 8080:8080 -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
-  -v local-voice-ai-models:/models \
-  ghcr.io/shaynep/local-voice-ai:latest
+  -v story-teller-models:/models \
+  ghcr.io/sooriyapsn/story-teller:latest
 ```
 
 Or build from source (also the path for GPU builds):

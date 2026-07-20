@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { useSessionContext, useSessionMessages } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import type { CharacterId } from '@/components/app/agent-character';
+import { BalloonField } from '@/components/app/balloon-field';
 import { ChatTranscript } from '@/components/app/chat-transcript';
 import { PreConnectMessage } from '@/components/app/preconnect-message';
 import { TileLayout } from '@/components/app/tile-layout';
@@ -61,17 +62,35 @@ export function Fade({ top = false, bottom = false, className }: FadeProps) {
 interface SessionViewProps {
   appConfig: AppConfig;
   character: CharacterId;
+  timeLimitMinutes: number;
 }
 
 export const SessionView = ({
   appConfig,
   character,
+  timeLimitMinutes,
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
   const { messages } = useSessionMessages(session);
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Parent-set play time limit: end the call gently instead of leaving it
+  // open indefinitely. Client-side only — good enough for a home app where
+  // the "adversary" is a 4-year-old, not someone trying to bypass it.
+  useEffect(() => {
+    if (!timeLimitMinutes || timeLimitMinutes <= 0) return;
+    const timer = setTimeout(() => {
+      toastAlert({
+        title: 'Playtime is up!',
+        description: "That's all the story time for now — see you again soon!",
+      });
+      session.end();
+    }, timeLimitMinutes * 60_000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-arm if the limit itself changes
+  }, [timeLimitMinutes]);
 
   const controls: ControlBarControls = {
     leave: true,
@@ -92,6 +111,8 @@ export const SessionView = ({
 
   return (
     <section className="bg-background relative z-10 h-full w-full overflow-hidden" {...props}>
+      <BalloonField />
+
       {/* Chat Transcript */}
       <div
         className={cn(

@@ -3,9 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { type AgentState } from '@livekit/components-react';
-import { CheckIcon, SpinnerIcon } from '@phosphor-icons/react/dist/ssr';
+import { CheckIcon, LockKeyIcon, SparkleIcon, SpinnerIcon } from '@phosphor-icons/react/dist/ssr';
 import { AgentCharacter, type CharacterId } from '@/components/app/agent-character';
+import { BalloonField } from '@/components/app/balloon-field';
+import { ParentPanel } from '@/components/app/parent-panel';
 import { toastAlert } from '@/components/livekit/alert-toast';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/livekit/select';
 import type { StackChild } from '@/hooks/useStackStatus';
 import { CHARACTERS } from '@/lib/characters';
 import { cn } from '@/lib/utils';
@@ -49,35 +58,6 @@ function StackStartupStatus({ services }: { services: StackChild[] }) {
   );
 }
 
-const BUBBLE_COLORS = ['#FFD166', '#FF8FA3', '#7FD8BE', '#8EC5FF', '#C6A8FF'];
-
-function PartyBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      {BUBBLE_COLORS.map((color, i) => (
-        <motion.div
-          key={color}
-          className="absolute rounded-full opacity-25 blur-2xl dark:opacity-20"
-          style={{
-            backgroundColor: color,
-            width: 140 + i * 30,
-            height: 140 + i * 30,
-            left: `${(i * 23) % 100}%`,
-            top: `${(i * 37) % 100}%`,
-          }}
-          animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
-          transition={{
-            duration: 6 + i,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.4,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 const LANGUAGE_LABELS: Record<string, string> = {
   en: 'English',
   te: 'తెలుగు',
@@ -95,30 +75,22 @@ function LanguagePicker({
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="mt-6 flex items-center gap-2">
-      {ALL_LANGUAGES.map((id) => {
-        const available = availableLanguages.includes(id);
-        return (
-          <button
-            key={id}
-            type="button"
-            disabled={!available}
-            onClick={() => onChange(id)}
-            className={cn(
-              'rounded-full px-4 py-2 text-sm font-semibold transition-colors',
-              available
-                ? language === id
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted text-foreground hover:bg-muted/70'
-                : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
-            )}
-          >
-            {LANGUAGE_LABELS[id]}
-            {!available && <span className="ml-1 text-xs">(soon)</span>}
-          </button>
-        );
-      })}
-    </div>
+    <Select value={language} onValueChange={onChange}>
+      <SelectTrigger className="w-36" aria-label="Language">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {ALL_LANGUAGES.map((id) => {
+          const available = availableLanguages.includes(id);
+          return (
+            <SelectItem key={id} value={id} disabled={!available}>
+              {LANGUAGE_LABELS[id]}
+              {!available && <span className="text-muted-foreground ml-1 text-xs">(soon)</span>}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -175,6 +147,7 @@ export const WelcomeView = ({
   const [language, setLanguage] = useState('en');
   const [announcingId, setAnnouncingId] = useState<CharacterId | null>(null);
   const [introDone, setIntroDone] = useState(false);
+  const [parentPanelOpen, setParentPanelOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cancelledRef = useRef(false);
 
@@ -250,6 +223,9 @@ export const WelcomeView = ({
             setTimeout(done, 8000);
           });
         }
+        if (cancelledRef.current) break;
+        setAnnouncingId(null);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
       urls.forEach((url) => url && URL.revokeObjectURL(url));
       if (!cancelledRef.current) {
@@ -276,13 +252,47 @@ export const WelcomeView = ({
 
   return (
     <div ref={ref} className="relative min-h-svh">
-      <PartyBackground />
+      <BalloonField />
       <audio ref={audioRef} className="hidden" />
 
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {stackReady && (
+          <LanguagePicker
+            language={language}
+            availableLanguages={availableLanguages}
+            onChange={setLanguage}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => setParentPanelOpen(true)}
+          aria-label="Parent settings"
+          title="Parent settings"
+          className="border-input bg-background text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-full border"
+        >
+          <LockKeyIcon weight="bold" className="size-4" />
+        </button>
+      </div>
+      <ParentPanel open={parentPanelOpen} onClose={() => setParentPanelOpen(false)} />
+
       <section className="flex min-h-svh flex-col items-center justify-center px-6 text-center">
-        <h1 className="text-foreground max-w-sm text-3xl leading-tight font-extrabold text-balance sm:text-4xl">
-          Who do you want to play with?
-        </h1>
+        <div className="flex items-center gap-2">
+          <motion.span
+            animate={{ rotate: [0, 15, 0], scale: [1, 1.15, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <SparkleIcon weight="fill" className="size-8 text-[#FFD166] sm:size-10" />
+          </motion.span>
+          <h1 className="text-foreground max-w-sm text-3xl leading-tight font-extrabold text-balance sm:text-4xl">
+            Who do you want to <span className="text-[#FF6B4A]">play</span> with?
+          </h1>
+          <motion.span
+            animate={{ rotate: [0, -15, 0], scale: [1, 1.15, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+          >
+            <SparkleIcon weight="fill" className="size-8 text-[#FFD166] sm:size-10" />
+          </motion.span>
+        </div>
         <p className="text-muted-foreground mt-2 max-w-xs text-base leading-6 text-balance">
           {introDone ? 'Tap your favorite friend to start!' : 'Say hi to your storytime friends...'}
         </p>
@@ -301,11 +311,6 @@ export const WelcomeView = ({
                 />
               ))}
             </div>
-            <LanguagePicker
-              language={language}
-              availableLanguages={availableLanguages}
-              onChange={setLanguage}
-            />
             {wakeWord && (
               <p className="text-muted-foreground mt-4 text-sm">
                 Say <span className="text-foreground font-medium">“Hey LiveKit”</span> after

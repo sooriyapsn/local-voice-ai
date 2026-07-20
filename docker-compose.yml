@@ -35,8 +35,12 @@ services:
       # downloads + RAM most deployments won't need.
       ENABLE_INDIC_TTS: ${ENABLE_INDIC_TTS:-}
       INDIC_TTS_BASE_URL: ${INDIC_TTS_BASE_URL:-}
+      # Gates the parent settings panel (time limit, custom story/lesson).
+      PARENT_PIN: ${PARENT_PIN:-1234}
     ports:
-      - "${WEB_PORT:-8080}:8080"
+      # Container-side must track WEB_PORT too: env_file loads it into the
+      # app's own environment, and it binds uvicorn to that port internally.
+      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
       - "${LIVEKIT_BIND_PORT:-7880}:7880"
       - "${LIVEKIT_RTC_PORT:-7881}:7881"
       # WebRTC media over UDP. The host port must equal the container port

@@ -60,6 +60,7 @@ export function ViewController({ appConfig, character, onSelectCharacter }: View
           {...VIEW_MOTION_PROPS}
           appConfig={appConfig}
           character={character}
+          timeLimitMinutes={stackStatus.timeLimitMinutes}
         />
       )}
     </AnimatePresence>

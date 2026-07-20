@@ -215,11 +215,8 @@ class Config:
             manage_tts=_env_bool("MANAGE_TTS", _is_loopback(tts_base_url)),
             #
             indic_tts_enabled=_env_bool("ENABLE_INDIC_TTS", cls.indic_tts_enabled),
-            # docker-compose.yml passes INDIC_TTS_BASE_URL through as
-            # ${INDIC_TTS_BASE_URL:-} — set-but-empty, not unset — so
-            # os.getenv's default arg (which only applies to truly-unset
-            # vars) won't catch it; `or` treats the empty string as falsy
-            # too, same pattern as public_livekit_url below.
+            # docker-compose.yml passes this through as set-but-empty when
+            # unset, so `or` (not os.getenv's default arg) catches it.
             indic_tts_base_url=os.getenv("INDIC_TTS_BASE_URL") or cls.indic_tts_base_url,
             indic_tts_bind_port=int(
                 os.getenv("INDIC_TTS_BIND_PORT", str(cls.indic_tts_bind_port))

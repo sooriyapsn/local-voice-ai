@@ -107,10 +107,48 @@ export function AgentCharacter({
   const mouthOpen = isSpeaking ? Math.min(1, Math.max(0.12, volume * 3.5)) : 0;
   const eyeRadius = isListening ? 12 : 10;
 
+  // Grumpy characters fold their arms while idle instead of swaying them.
+  const isGrumpyIdle = !!theme.grumpy && !isSpeaking && !isThinking && !isOffline;
+
+  const leftArmAnimate = isOffline
+    ? { rotate: 0 }
+    : isGrumpyIdle
+      ? { rotate: 34 }
+      : isSpeaking
+        ? { rotate: [-8, 18, -8] }
+        : isThinking
+          ? { rotate: -8 }
+          : { rotate: [-6, 6, -6] };
+
+  const rightArmAnimate = isOffline
+    ? { rotate: 0 }
+    : isGrumpyIdle
+      ? { rotate: -34 }
+      : isSpeaking
+        ? { rotate: [8, -18, 8] }
+        : isThinking
+          ? { rotate: -132 } // raises toward the chin, a "hmm" gesture
+          : { rotate: [6, -6, 6] };
+
+  const armTransition = {
+    duration: isOffline ? 0.3 : isSpeaking ? 0.55 : isThinking ? 0.9 : 2.4,
+    repeat: isOffline || isThinking ? 0 : Infinity,
+    ease: 'easeInOut' as const,
+  };
+
+  // Legs dangle and swing gently, a little faster/livelier while speaking.
+  const leftLegAnimate = isOffline ? { rotate: 0 } : { rotate: [-10, 8, -10] };
+  const rightLegAnimate = isOffline ? { rotate: 0 } : { rotate: [10, -8, 10] };
+  const legTransition = {
+    duration: isOffline ? 0.3 : isSpeaking ? 0.7 : 1.8,
+    repeat: isOffline ? 0 : Infinity,
+    ease: 'easeInOut' as const,
+  };
+
   return (
     <div className={cn('flex h-full w-full items-center justify-center', className)}>
       <motion.svg
-        viewBox="0 0 200 200"
+        viewBox="-30 -30 260 260"
         className="h-full w-full drop-shadow-md"
         animate={isOffline ? { y: 0, opacity: 0.45 } : { y: [0, -6, 0], opacity: 1 }}
         transition={
@@ -119,6 +157,64 @@ export function AgentCharacter({
             : { duration: isSpeaking ? 0.9 : 2.4, repeat: Infinity, ease: 'easeInOut' }
         }
       >
+        <defs>
+          <radialGradient id={`body-gradient-${character}`} cx="35%" cy="30%" r="75%">
+            <stop offset="0%" stopColor="white" stopOpacity="0.55" />
+            <stop offset="35%" stopColor="white" stopOpacity="0" />
+            <stop offset="100%" stopColor="black" stopOpacity="0.08" />
+          </radialGradient>
+        </defs>
+
+        {/* listening: pulsing ring, like a mic/radar ping */}
+        {isListening && (
+          <>
+            <motion.circle
+              cx="100"
+              cy="108"
+              r="82"
+              fill="none"
+              stroke={theme.accessoryColor}
+              strokeWidth="4"
+              initial={{ scale: 1, opacity: 0.7 }}
+              animate={{ scale: 1.35, opacity: 0 }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
+            />
+            <motion.circle
+              cx="100"
+              cy="108"
+              r="82"
+              fill="none"
+              stroke={theme.accessoryColor}
+              strokeWidth="4"
+              initial={{ scale: 1, opacity: 0.7 }}
+              animate={{ scale: 1.35, opacity: 0 }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut', delay: 0.8 }}
+            />
+          </>
+        )}
+
+        {/* thinking: bouncing "..." thought trail */}
+        {isThinking && (
+          <motion.g
+            animate={{ y: [0, -4, 0] }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            {[0, 1, 2].map((i) => (
+              <motion.circle
+                key={i}
+                cx={168 + i * 16}
+                cy={-4 - i * 10}
+                r={5 + i * 1.5}
+                fill={theme.accessoryColor}
+                stroke={theme.bodyStroke}
+                strokeWidth="1.5"
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
+              />
+            ))}
+          </motion.g>
+        )}
+
         {/* accessory */}
         <motion.g
           animate={{ rotate: [-6, 6, -6] }}
@@ -153,6 +249,75 @@ export function AgentCharacter({
           style={{ transformOrigin: '100px 186px' }}
           transition={{ duration: 1.6, repeat: isThinking ? Infinity : 0, ease: 'easeInOut' }}
         />
+        <circle cx="100" cy="108" r="78" fill={`url(#body-gradient-${character})`} />
+
+        {/* arms */}
+        <motion.g
+          animate={leftArmAnimate}
+          transition={armTransition}
+          style={{ transformOrigin: '26px 122px' }}
+        >
+          <line
+            x1="26"
+            y1="122"
+            x2="6"
+            y2="158"
+            stroke={theme.body}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+          <circle cx="6" cy="158" r="11" fill={theme.body} />
+        </motion.g>
+        <motion.g
+          animate={rightArmAnimate}
+          transition={armTransition}
+          style={{ transformOrigin: '174px 122px' }}
+        >
+          <line
+            x1="174"
+            y1="122"
+            x2="194"
+            y2="158"
+            stroke={theme.body}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+          <circle cx="194" cy="158" r="11" fill={theme.body} />
+        </motion.g>
+
+        {/* legs */}
+        <motion.g
+          animate={leftLegAnimate}
+          transition={legTransition}
+          style={{ transformOrigin: '80px 178px' }}
+        >
+          <line
+            x1="80"
+            y1="178"
+            x2="70"
+            y2="212"
+            stroke={theme.body}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+          <circle cx="70" cy="212" r="11" fill={theme.body} />
+        </motion.g>
+        <motion.g
+          animate={rightLegAnimate}
+          transition={legTransition}
+          style={{ transformOrigin: '120px 178px' }}
+        >
+          <line
+            x1="120"
+            y1="178"
+            x2="130"
+            y2="212"
+            stroke={theme.body}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+          <circle cx="130" cy="212" r="11" fill={theme.body} />
+        </motion.g>
 
         {/* cheeks */}
         <circle cx="52" cy="122" r="12" fill={theme.cheek} opacity="0.55" />

@@ -21,10 +21,12 @@ def _decode_jwt_payload(token: str) -> dict:
 
 
 @pytest.fixture
-def cfg(monkeypatch: pytest.MonkeyPatch) -> Config:
+def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Config:
     monkeypatch.setenv("LIVEKIT_API_KEY", "devkey")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "secret-secret-secret-thirty-two-chars")
     monkeypatch.setenv("LIVEKIT_URL", "ws://127.0.0.1:7880")
+    monkeypatch.setenv("PARENT_SETTINGS_PATH", str(tmp_path / "parent-settings.json"))
+    monkeypatch.setenv("PARENT_PIN", "1234")
     return Config.from_env()
 
 
@@ -50,6 +52,7 @@ class TestStatus:
             "children": [],
             "wake_word": False,
             "languages": ["en"],
+            "time_limit_minutes": 30,
         }
 
     def test_wake_word_flag_surfaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -199,3 +202,72 @@ class TestStaticFrontend:
         r = client.get("/healthz")
         assert r.status_code == 200
         assert r.json() == {"status": "ok"}
+
+
+class TestParentSettings:
+    def test_verify_pin_rejects_wrong_pin(self, client: TestClient) -> None:
+        r = client.post("/api/parent/verify-pin", json={"pin": "0000"})
+        assert r.status_code == 200
+        assert r.json() == {"ok": False}
+
+    def test_verify_pin_accepts_correct_pin(self, client: TestClient) -> None:
+        r = client.post("/api/parent/verify-pin", json={"pin": "1234"})
+        assert r.json() == {"ok": True}
+
+    def test_get_settings_requires_pin_header(self, client: TestClient) -> None:
+        r = client.get("/api/parent/settings")
+        assert r.status_code == 401
+
+    def test_get_settings_returns_defaults(self, client: TestClient) -> None:
+        r = client.get("/api/parent/settings", headers={"X-Parent-Pin": "1234"})
+        assert r.status_code == 200
+        assert r.json() == {"time_limit_minutes": 30, "story_title": "", "story_text": ""}
+
+    def test_save_settings_requires_correct_pin(self, client: TestClient) -> None:
+        r = client.post("/api/parent/settings", json={"pin": "wrong", "time_limit_minutes": 60})
+        assert r.status_code == 401
+
+    def test_save_settings_persists_and_rejects_out_of_range_limit(
+        self, client: TestClient
+    ) -> None:
+        r = client.post(
+            "/api/parent/settings",
+            json={
+                "pin": "1234",
+                "time_limit_minutes": 999,
+                "story_title": "Lesson",
+                "story_text": "Once upon a time...",
+            },
+        )
+        assert r.status_code == 200
+        # 999 is outside the 5-180 range, so it's ignored and the default sticks.
+        assert r.json()["time_limit_minutes"] == 30
+        assert r.json()["story_text"] == "Once upon a time..."
+
+        r2 = client.get("/api/parent/settings", headers={"X-Parent-Pin": "1234"})
+        assert r2.json()["story_title"] == "Lesson"
+
+    def test_status_reflects_saved_time_limit(self, client: TestClient) -> None:
+        client.post("/api/parent/settings", json={"pin": "1234", "time_limit_minutes": 45})
+        assert client.get("/api/status").json()["time_limit_minutes"] == 45
+
+    def test_upload_pdf_requires_correct_pin(self, client: TestClient) -> None:
+        r = client.post(
+            "/api/parent/upload-pdf",
+            data={"pin": "wrong"},
+            files={"file": ("story.pdf", b"not a real pdf", "application/pdf")},
+        )
+        assert r.status_code == 401
+
+    def test_connection_details_carries_saved_story_in_room_metadata(
+        self, client: TestClient
+    ) -> None:
+        client.post(
+            "/api/parent/settings",
+            json={"pin": "1234", "time_limit_minutes": 30, "story_text": "The tortoise and hare"},
+        )
+        r = client.post("/api/connection-details", json={"character": "red"})
+        assert r.status_code == 200
+        payload = _decode_jwt_payload(r.json()["participantToken"])
+        metadata = json.loads(payload["roomConfig"]["metadata"])
+        assert metadata["story"] == "The tortoise and hare"

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# Single-image build for local-voice-ai.
+# Single-image build for story-teller.
 #
 # Stages:
 #   frontend  → produces a Next.js static export at /app/out

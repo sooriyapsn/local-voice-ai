@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A real-time voice AI assistant (STT → LLM → TTS) that runs as **one container supervised by a single Python parent process**. There is no microservices orchestration layer — `local_voice_ai/supervisor.py` spawns and health-checks everything as plain subprocesses on loopback.
+Story Teller: a voice storyteller app for young children (STT → LLM → TTS) that runs as **one container supervised by a single Python parent process**. There is no microservices orchestration layer — `local_voice_ai/supervisor.py` spawns and health-checks everything as plain subprocesses on loopback. Three fixed characters, English/Telugu/Marathi TTS, and a PIN-gated parent dashboard (session time limit, a custom story/lesson pasted in or extracted from a PDF) sit on top of that base. The Python package/module is still named `local_voice_ai` — only the project's external name changed.
 
 ## Commands
 
@@ -74,7 +74,7 @@ Each service has one decision, driven by whether its `*_BASE_URL` is a loopback 
 - `local_voice_ai/__main__.py` — `_build_specs()` turns `Config` into the list of `ChildSpec`s (this is where each service's actual CLI invocation lives); `_serve()` wires the supervisor and the FastAPI app together on one event loop, with the web server intentionally starting *before* children are ready so `/api/status` can serve first-boot download progress instead of a dead page.
 - `local_voice_ai/config.py` — env-driven `Config` dataclass shared by supervisor, agent, and API routes. Ported 1:1 into `agent_env()` for the agent subprocess's environment.
 - `local_voice_ai/agent.py` — the LiveKit Agents worker (STT/LLM/TTS session wiring, wake-word gating, greeting logic). Talks to the STT/LLM/TTS children purely via their OpenAI-compatible HTTP APIs — it doesn't know or care whether they're local subprocesses or remote providers.
-- `local_voice_ai/api.py` — FastAPI app: token minting (`_mint_token`, a Python port of `frontend/app/api/connection-details/route.ts`) and static frontend serving (SPA fallback to `index.html`).
+- `local_voice_ai/api.py` — FastAPI app: token minting (`_mint_token`), the PIN-gated parent-settings endpoints, and static frontend serving (SPA fallback to `index.html`).
 - `local_voice_ai/services/{nemotron,whisper,kokoro}/server.py` — OpenAI-compatible uvicorn servers for each local inference backend.
 - `frontend/` — Next.js app configured for **static export**; the export output is what `Config.frontend_dir` points FastAPI at in the container. There's no separate frontend server in production.
 
@@ -92,4 +92,4 @@ Full reference lives in `.env` and the README's "Environment variables" section.
 
 ## CI (`.github/workflows/ci.yml`)
 
-Three jobs gate merges: `test` (pytest on 3.11), `frontend` (`pnpm run build`). A `docker` + `docker-merge` job pair only runs on pushes to `main`/tags — it builds amd64 and arm64 natively (no QEMU, since the ML stack would take hours emulated) and stitches the digests into one multi-arch manifest pushed to `ghcr.io/shaynep/local-voice-ai`.
+Three jobs gate merges: `test` (pytest on 3.11), `frontend` (`pnpm run build`). A `docker` + `docker-merge` job pair only runs on pushes to `main`/tags — it builds amd64 and arm64 natively (no QEMU, since the ML stack would take hours emulated) and stitches the digests into one multi-arch manifest pushed to `ghcr.io/sooriyapsn/story-teller`.

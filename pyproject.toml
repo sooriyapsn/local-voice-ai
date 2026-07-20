@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "local-voice-ai"
+name = "story-teller"
 version = "0.1.0"
-description = "Local voice AI assistant: a single supervised process bundling LiveKit Agents, llama.cpp, Nemotron STT, and Kokoro TTS."
+description = "A self-hosted, local-only voice storyteller for kids: a single supervised process bundling LiveKit Agents, llama.cpp, Nemotron STT, and Kokoro TTS."
 requires-python = ">=3.11"
 
 dependencies = [
@@ -27,6 +27,7 @@ dependencies = [
     "numpy",
     "soundfile",
     "python-multipart",
+    "pypdf>=4",
 ]
 
 [project.optional-dependencies]
@@ -51,7 +52,7 @@ dev = [
 ]
 
 [project.scripts]
-local-voice-ai = "local_voice_ai.__main__:main"
+story-teller = "local_voice_ai.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["local_voice_ai*"]

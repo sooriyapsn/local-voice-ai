@@ -18,6 +18,8 @@ export interface StackStatus {
   /** Which languages the backend can actually speak right now — Telugu/Marathi
    * only appear once the optional indic_tts child is enabled and running. */
   languages: string[];
+  /** Parent-configured session time limit, minutes. */
+  timeLimitMinutes: number;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -36,6 +38,7 @@ export function useStackStatus(): StackStatus {
     children: [],
     wakeWord: false,
     languages: ['en'],
+    timeLimitMinutes: 30,
   });
 
   useEffect(() => {
@@ -53,9 +56,18 @@ export function useStackStatus(): StackStatus {
           children: data.children,
           wakeWord: !!data.wake_word,
           languages: Array.isArray(data.languages) ? data.languages : ['en'],
+          timeLimitMinutes:
+            typeof data.time_limit_minutes === 'number' ? data.time_limit_minutes : 30,
         };
       } catch {
-        next = { ready: true, children: [], wakeWord: false, languages: ['en'] }; // fail open
+        // fail open
+        next = {
+          ready: true,
+          children: [],
+          wakeWord: false,
+          languages: ['en'],
+          timeLimitMinutes: 30,
+        };
       }
       if (cancelled) return;
       setStatus(next);

@@ -32,8 +32,8 @@ load_dotenv(".env.local")
 
 
 class Assistant(Agent):
-    def __init__(self, character: Character, language: str = "en") -> None:
-        super().__init__(instructions=instructions_for(character, language))
+    def __init__(self, character: Character, language: str = "en", custom_story: str = "") -> None:
+        super().__init__(instructions=instructions_for(character, language, custom_story))
 
 
 server = AgentServer()
@@ -121,7 +121,8 @@ async def my_agent(ctx: JobContext) -> None:
     # necessarily speaking it yet — only the LLM's output language and TTS
     # voice change.
     language = room_metadata.get("language", "en")
-    logger.info("character=%s language=%s", character.id, language)
+    custom_story = room_metadata.get("story", "")
+    logger.info("character=%s language=%s custom_story=%s", character.id, language, bool(custom_story))
 
     llama_model = os.getenv("LLAMA_MODEL", "gemma-4-e2b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
@@ -141,11 +142,11 @@ async def my_agent(ctx: JobContext) -> None:
 
     indic_tts_enabled = os.getenv("ENABLE_INDIC_TTS", "").strip().lower() in {"1", "true", "yes", "on"}
     if language in ("te", "mr") and indic_tts_enabled:
-        # A single shared MMS voice per language (see services/indic_tts) —
-        # the character choice no longer determines the voice here, only the
-        # words the LLM chooses to say.
+        # MMS ships one base voice per language; indic_tts pitch-shifts it
+        # per character (see services/indic_tts's PITCH_SHIFTS_SEMITONES) so
+        # Red/Blue/Rosie still sound distinct.
         tts_base_url = os.getenv("INDIC_TTS_BASE_URL", "http://127.0.0.1:8881/v1")
-        tts_voice = language
+        tts_voice = f"{language}-{character.id}"
     else:
         if language in ("te", "mr"):
             logger.warning(
@@ -200,8 +201,19 @@ async def my_agent(ctx: JobContext) -> None:
         preemptive_generation=True,
     )
 
-    await session.start(agent=Assistant(character, language), room=ctx.room)
+    await session.start(agent=Assistant(character, language, custom_story), room=ctx.room)
     await ctx.connect()
+
+    # Restated here, not just in the system prompt: the model otherwise
+    # tends to match the (English) language of this very instruction for
+    # the greeting specifically, opening in English before switching to the
+    # target language mid-reply.
+    language_names = {"te": "Telugu", "mr": "Marathi"}
+    greeting_language_hint = (
+        f" Say this greeting itself in {language_names[language]}, not English."
+        if language in language_names
+        else ""
+    )
 
     if wake_word:
         # Join deaf, wait for the wake phrase, then wake up and greet.
@@ -219,7 +231,7 @@ async def my_agent(ctx: JobContext) -> None:
             instructions=(
                 "You just woke up because she said the wake phrase. Greet her very "
                 f"briefly, staying fully in character as {character.name}, and ask "
-                "if she'd like to hear a story."
+                f"if she'd like to hear a story.{greeting_language_hint}"
             )
         )
     else:
@@ -228,7 +240,7 @@ async def my_agent(ctx: JobContext) -> None:
             instructions=(
                 "Greet the child warmly in one short, cheerful sentence, staying "
                 f"fully in character as {character.name}, and ask if she'd like to "
-                "hear a story."
+                f"hear a story.{greeting_language_hint}"
             )
         )
 

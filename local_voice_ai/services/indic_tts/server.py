@@ -8,9 +8,18 @@ and unverified for CPU speed. MMS is public, and benchmarked on this stack at
 The tradeoff: MMS ships exactly one voice per language, so unlike Kokoro,
 every character sounds the same when speaking Telugu or Marathi.
 
+MMS ships exactly one voice per language, so a pitch shift is applied on top
+per-character (see PITCH_SHIFTS) to keep Red One/Blue Bolt/Rosie sounding
+distinct rather than all speaking with the same adult male voice. Cheap
+linear-interpolation resampling, not a real phase-vocoder shift (near-zero
+cost vs. ~3.5s for torchaudio's PitchShift on this hardware — too slow for
+live conversation) — duration shifts along with pitch, which is an
+acceptable trade for a short reply.
+
 Exposes only what ``livekit.plugins.openai.TTS`` needs:
-  - ``POST /v1/audio/speech``  → audio bytes (``voice`` selects the language:
-    ``te`` for Telugu, ``mr`` for Marathi)
+  - ``POST /v1/audio/speech``  → audio bytes (``voice`` = "{lang}-{character}",
+    e.g. "te-pink"; the language selects the model, the character selects
+    the pitch shift)
   - ``GET  /v1/models``         → list of available "models" (one per language)
   - ``GET  /health``            → readiness probe
 
@@ -39,14 +48,19 @@ logging.basicConfig(level=logging.INFO)
 
 MODEL_ID = "indic-tts"
 
-# voice id -> HF repo. One fixed voice per language (MMS has no gender/tone
-# variety), keyed the same way the frontend's language picker uses them.
 LANGUAGE_REPOS = {
     "te": "facebook/mms-tts-tel",
     "mr": "facebook/mms-tts-mar",
 }
 
-_models: dict[str, tuple] = {}  # voice id -> (VitsModel, AutoTokenizer)
+# Semitones to shift the base (adult male) MMS voice per character.
+PITCH_SHIFTS_SEMITONES = {
+    "red": 0,  # matches the base voice already
+    "blue": 4,
+    "pink": 8,
+}
+
+_models: dict[str, tuple] = {}  # language -> (VitsModel, AutoTokenizer)
 
 
 def _load_models() -> None:
@@ -78,15 +92,33 @@ class SpeechRequest(BaseModel):
     speed: Optional[float] = 1.0
 
 
+def _pitch_shift(audio: np.ndarray, semitones: int) -> np.ndarray:
+    if semitones == 0:
+        return audio
+    factor = 2 ** (semitones / 12)
+    n_new = max(1, int(len(audio) / factor))
+    x_old = np.linspace(0, 1, len(audio))
+    x_new = np.linspace(0, 1, n_new)
+    return np.interp(x_new, x_old, audio).astype(np.float32)
+
+
+def _parse_voice(voice: str) -> tuple[str, int]:
+    """"{lang}-{character}" -> (lang, pitch shift in semitones). Bare "te"/"mr"
+    (no character suffix) is also accepted, defaulting to no shift."""
+    lang, _, character = voice.partition("-")
+    if lang not in _models:
+        raise ValueError(f"unknown language {lang!r}; expected one of {list(_models)}")
+    return lang, PITCH_SHIFTS_SEMITONES.get(character, 0)
+
+
 def _synthesize(text: str, voice: str) -> tuple[np.ndarray, int]:
-    if voice not in _models:
-        raise ValueError(f"unknown voice {voice!r}; expected one of {list(_models)}")
-    model, tokenizer = _models[voice]
+    lang, semitones = _parse_voice(voice)
+    model, tokenizer = _models[lang]
     inputs = tokenizer(text, return_tensors="pt")
     with torch.no_grad():
         waveform = model(**inputs).waveform
     audio = waveform.squeeze().cpu().numpy().astype(np.float32)
-    return audio, model.config.sampling_rate
+    return _pitch_shift(audio, semitones), model.config.sampling_rate
 
 
 def _encode(audio: np.ndarray, sample_rate: int, fmt: str) -> tuple[bytes, str]:
