@@ -45,12 +45,24 @@ class TestStatus:
         # Without a supervisor (tests, bare API) the stack is trivially ready.
         r = client.get("/api/status")
         assert r.status_code == 200
-        assert r.json() == {"ready": True, "children": [], "wake_word": False}
+        assert r.json() == {
+            "ready": True,
+            "children": [],
+            "wake_word": False,
+            "languages": ["en"],
+        }
 
     def test_wake_word_flag_surfaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("WAKE_WORD", "1")
         client = TestClient(build_app(Config.from_env()))
         assert client.get("/api/status").json()["wake_word"] is True
+
+    def test_indic_languages_only_offered_when_enabled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ENABLE_INDIC_TTS", "1")
+        client = TestClient(build_app(Config.from_env()))
+        assert client.get("/api/status").json()["languages"] == ["en", "te", "mr"]
 
     def test_reports_children_not_ready(self, cfg: Config) -> None:
         children = [
@@ -112,6 +124,26 @@ class TestConnectionDetails:
         r = client.post("/api/connection-details", json={})
         payload = _decode_jwt_payload(r.json()["participantToken"])
         assert "roomConfig" not in payload
+
+    def test_character_metadata_still_dispatches_the_unnamed_worker(
+        self, client: TestClient
+    ) -> None:
+        # Regression test: attaching a RoomConfiguration (for character/language
+        # metadata) must not opt the room out of LiveKit's default dispatch to
+        # an unnamed worker — that requires an explicit agent_name="" dispatch
+        # entry alongside the metadata, or the agent never joins the room.
+        r = client.post(
+            "/api/connection-details",
+            json={"character": "red", "language": "en"},
+        )
+        payload = _decode_jwt_payload(r.json()["participantToken"])
+        agents = payload["roomConfig"]["agents"]
+        assert len(agents) == 1
+        # Proto3 JSON omits string fields at their default ("") value, so an
+        # unnamed dispatch serializes as {} rather than {"agentName": ""}.
+        assert agents[0].get("agentName", "") == ""
+        metadata = json.loads(payload["roomConfig"]["metadata"])
+        assert metadata == {"character": "red", "language": "en"}
 
     def test_malformed_body_still_returns_a_token(self, client: TestClient) -> None:
         # The Next.js route swallowed JSON errors silently; ours should too.

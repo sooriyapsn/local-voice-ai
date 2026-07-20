@@ -142,15 +142,17 @@ export function AgentControlBar({
           )}
 
           {/* Toggle Transcript */}
-          <Toggle
-            size="icon"
-            variant="secondary"
-            aria-label="Toggle transcript"
-            pressed={chatOpen}
-            onPressedChange={handleToggleTranscript}
-          >
-            <ChatTextIcon weight="bold" />
-          </Toggle>
+          {visibleControls.chat && (
+            <Toggle
+              size="icon"
+              variant="secondary"
+              aria-label="Toggle transcript"
+              pressed={chatOpen}
+              onPressedChange={handleToggleTranscript}
+            >
+              <ChatTextIcon weight="bold" />
+            </Toggle>
+          )}
         </div>
 
         {/* Disconnect */}

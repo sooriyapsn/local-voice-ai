@@ -15,6 +15,11 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-ws://127.0.0.1:7880}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      # For browsers on another device (e.g. a tablet over Wi-Fi): the
+      # LAN-reachable address handed to browsers, and the IP advertised in
+      # WebRTC ICE candidates. Both default to loopback-only (same machine).
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-127.0.0.1}
       STT_PROVIDER: ${STT_PROVIDER:-nemotron}
       WAKE_WORD: ${WAKE_WORD:-}
       WAKE_WORD_THRESHOLD: ${WAKE_WORD_THRESHOLD:-0.5}
@@ -26,6 +31,10 @@ services:
       LLAMA_CTX_SIZE: ${LLAMA_CTX_SIZE:-16384}
       LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-0}
       DEVICE: ${DEVICE:-cpu}
+      # Telugu/Marathi TTS (Meta MMS) — off by default, extra model
+      # downloads + RAM most deployments won't need.
+      ENABLE_INDIC_TTS: ${ENABLE_INDIC_TTS:-}
+      INDIC_TTS_BASE_URL: ${INDIC_TTS_BASE_URL:-}
     ports:
       - "${WEB_PORT:-8080}:8080"
       - "${LIVEKIT_BIND_PORT:-7880}:7880"

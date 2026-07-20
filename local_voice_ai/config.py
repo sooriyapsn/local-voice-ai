@@ -62,6 +62,14 @@ class Config:
     # running the server on a remote host reached over the network.
     livekit_node_ip: str = "127.0.0.1"
     manage_livekit: bool = True
+    # The serverUrl handed to browsers in the minted token. Empty means "same
+    # as livekit_url" (the common case: everything is on one host). Override
+    # with LIVEKIT_PUBLIC_URL when a browser on another device (e.g. a tablet
+    # over Wi-Fi) needs a LAN-reachable address while the agent, which runs
+    # inside this same container, keeps talking to livekit-server over
+    # loopback — the container generally can't reach the host's own LAN IP
+    # (hairpin NAT), so these two addresses must be allowed to differ.
+    livekit_public_url: str = ""
 
     # --- LLM (llama.cpp by default) -------------------------------------
     llama_base_url: str = "http://127.0.0.1:11434/v1"
@@ -107,6 +115,14 @@ class Config:
     tts_bind_port: int = 8880
     manage_tts: bool = True
 
+    # --- Indic TTS (Telugu/Marathi, optional) ----------------------------
+    # Kokoro has no Telugu/Marathi support, so this is a second, separate TTS
+    # child (Meta MMS models) — off by default since it's an extra ~2 model
+    # downloads + a chunk of RAM that most deployments won't need.
+    indic_tts_enabled: bool = False
+    indic_tts_base_url: str = "http://127.0.0.1:8881/v1"
+    indic_tts_bind_port: int = 8881
+
     # --- Wake word (off by default) --------------------------------------
     # When enabled the agent joins deaf and only starts listening after the
     # wake phrase ("hey livekit") is detected on the user's microphone.
@@ -119,6 +135,12 @@ class Config:
 
     # --- Misc -----------------------------------------------------------
     log_level: str = "INFO"
+
+    @property
+    def public_livekit_url(self) -> str:
+        """The serverUrl minted into browser tokens: livekit_public_url if set,
+        else livekit_url."""
+        return self.livekit_public_url or self.livekit_url
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -156,6 +178,7 @@ class Config:
             livekit_udp_port=int(os.getenv("LIVEKIT_UDP_PORT", str(cls.livekit_udp_port))),
             livekit_node_ip=os.getenv("LIVEKIT_NODE_IP", cls.livekit_node_ip),
             manage_livekit=_env_bool("MANAGE_LIVEKIT", _is_loopback(livekit_url)),
+            livekit_public_url=os.getenv("LIVEKIT_PUBLIC_URL", cls.livekit_public_url),
             #
             llama_base_url=llama_base_url,
             llama_model=os.getenv("LLAMA_MODEL", cls.llama_model),
@@ -191,6 +214,17 @@ class Config:
             tts_bind_port=int(os.getenv("TTS_BIND_PORT", str(cls.tts_bind_port))),
             manage_tts=_env_bool("MANAGE_TTS", _is_loopback(tts_base_url)),
             #
+            indic_tts_enabled=_env_bool("ENABLE_INDIC_TTS", cls.indic_tts_enabled),
+            # docker-compose.yml passes INDIC_TTS_BASE_URL through as
+            # ${INDIC_TTS_BASE_URL:-} — set-but-empty, not unset — so
+            # os.getenv's default arg (which only applies to truly-unset
+            # vars) won't catch it; `or` treats the empty string as falsy
+            # too, same pattern as public_livekit_url below.
+            indic_tts_base_url=os.getenv("INDIC_TTS_BASE_URL") or cls.indic_tts_base_url,
+            indic_tts_bind_port=int(
+                os.getenv("INDIC_TTS_BIND_PORT", str(cls.indic_tts_bind_port))
+            ),
+            #
             device=os.getenv("DEVICE", cls.device).lower(),
             log_level=os.getenv("LOG_LEVEL", cls.log_level).upper(),
         )
@@ -214,4 +248,6 @@ class Config:
             "TTS_BASE_URL": self.tts_base_url,
             "TTS_VOICE": self.tts_voice,
             "TTS_API_KEY": self.tts_api_key,
+            "ENABLE_INDIC_TTS": "1" if self.indic_tts_enabled else "0",
+            "INDIC_TTS_BASE_URL": self.indic_tts_base_url,
         }

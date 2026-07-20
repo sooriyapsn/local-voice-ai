@@ -1,25 +1,33 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import { type AgentState } from '@livekit/components-react';
 import { CheckIcon, SpinnerIcon } from '@phosphor-icons/react/dist/ssr';
-import { Button } from '@/components/livekit/button';
+import { AgentCharacter, type CharacterId } from '@/components/app/agent-character';
+import { toastAlert } from '@/components/livekit/alert-toast';
 import type { StackChild } from '@/hooks/useStackStatus';
+import { CHARACTERS } from '@/lib/characters';
+import { cn } from '@/lib/utils';
 
 // Human labels for the supervisor's child process names (see /api/status).
 const CHILD_LABELS: Record<string, string> = {
-  livekit: 'WebRTC server',
-  llama: 'Language model',
-  nemotron: 'Speech-to-text',
-  whisper: 'Speech-to-text',
-  kokoro: 'Text-to-speech',
-  agent: 'Agent worker',
+  livekit: 'Getting the room ready',
+  llama: 'Warming up my brain',
+  nemotron: 'Tuning my ears',
+  whisper: 'Tuning my ears',
+  kokoro: 'Practicing my voice',
+  agent: 'Almost there',
 };
 
 function StackStartupStatus({ services }: { services: StackChild[] }) {
   return (
-    <div className="mt-6 w-64 text-left">
+    <div className="mt-6 w-72 text-left">
       <ul className="space-y-2">
         {services.map((child) => (
           <li key={child.name} className="text-foreground flex items-center gap-2 text-sm">
             {child.ready ? (
-              <CheckIcon weight="bold" className="text-fg0 size-4" />
+              <CheckIcon weight="bold" className="size-4 text-emerald-500" />
             ) : (
               <SpinnerIcon weight="bold" className="text-muted-foreground size-4 animate-spin" />
             )}
@@ -35,70 +43,273 @@ function StackStartupStatus({ services }: { services: StackChild[] }) {
         ))}
       </ul>
       <p className="text-muted-foreground mt-4 text-xs leading-5">
-        Starting services — the first run downloads model weights and can take a while.
+        Our friends are waking up! The very first time can take a little while.
       </p>
     </div>
   );
 }
 
-function WelcomeImage() {
+const BUBBLE_COLORS = ['#FFD166', '#FF8FA3', '#7FD8BE', '#8EC5FF', '#C6A8FF'];
+
+function PartyBackground() {
   return (
-    <svg
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className="text-fg0 mb-4 size-16"
+    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {BUBBLE_COLORS.map((color, i) => (
+        <motion.div
+          key={color}
+          className="absolute rounded-full opacity-25 blur-2xl dark:opacity-20"
+          style={{
+            backgroundColor: color,
+            width: 140 + i * 30,
+            height: 140 + i * 30,
+            left: `${(i * 23) % 100}%`,
+            top: `${(i * 37) % 100}%`,
+          }}
+          animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
+          transition={{
+            duration: 6 + i,
+            repeat: Infinity,
+            ease: 'easeInOut',
+            delay: i * 0.4,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  te: 'తెలుగు',
+  mr: 'मराठी',
+};
+const ALL_LANGUAGES = ['en', 'te', 'mr'];
+
+function LanguagePicker({
+  language,
+  availableLanguages,
+  onChange,
+}: {
+  language: string;
+  availableLanguages: string[];
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="mt-6 flex items-center gap-2">
+      {ALL_LANGUAGES.map((id) => {
+        const available = availableLanguages.includes(id);
+        return (
+          <button
+            key={id}
+            type="button"
+            disabled={!available}
+            onClick={() => onChange(id)}
+            className={cn(
+              'rounded-full px-4 py-2 text-sm font-semibold transition-colors',
+              available
+                ? language === id
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-foreground hover:bg-muted/70'
+                : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
+            )}
+          >
+            {LANGUAGE_LABELS[id]}
+            {!available && <span className="ml-1 text-xs">(soon)</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface CharacterCardProps {
+  id: CharacterId;
+  name: string;
+  tagline: string;
+  agentState: AgentState;
+  onSelect: () => void;
+}
+
+function CharacterCard({ id, name, tagline, agentState, onSelect }: CharacterCardProps) {
+  const isAnnouncing = agentState === 'speaking';
+  return (
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      whileTap={{ scale: 0.94 }}
+      animate={{ scale: isAnnouncing ? 1.08 : 1 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      className={cn(
+        'flex flex-col items-center gap-2 rounded-3xl border-2 p-4 transition-colors',
+        'min-w-[9.5rem] cursor-pointer',
+        isAnnouncing ? 'border-foreground/40 bg-muted/60' : 'hover:bg-muted/40 border-transparent'
+      )}
     >
-      <path
-        d="M15 24V40C15 40.7957 14.6839 41.5587 14.1213 42.1213C13.5587 42.6839 12.7956 43 12 43C11.2044 43 10.4413 42.6839 9.87868 42.1213C9.31607 41.5587 9 40.7957 9 40V24C9 23.2044 9.31607 22.4413 9.87868 21.8787C10.4413 21.3161 11.2044 21 12 21C12.7956 21 13.5587 21.3161 14.1213 21.8787C14.6839 22.4413 15 23.2044 15 24ZM22 5C21.2044 5 20.4413 5.31607 19.8787 5.87868C19.3161 6.44129 19 7.20435 19 8V56C19 56.7957 19.3161 57.5587 19.8787 58.1213C20.4413 58.6839 21.2044 59 22 59C22.7956 59 23.5587 58.6839 24.1213 58.1213C24.6839 57.5587 25 56.7957 25 56V8C25 7.20435 24.6839 6.44129 24.1213 5.87868C23.5587 5.31607 22.7956 5 22 5ZM32 13C31.2044 13 30.4413 13.3161 29.8787 13.8787C29.3161 14.4413 29 15.2044 29 16V48C29 48.7957 29.3161 49.5587 29.8787 50.1213C30.4413 50.6839 31.2044 51 32 51C32.7956 51 33.5587 50.6839 34.1213 50.1213C34.6839 49.5587 35 48.7957 35 48V16C35 15.2044 34.6839 14.4413 34.1213 13.8787C33.5587 13.3161 32.7956 13 32 13ZM42 21C41.2043 21 40.4413 21.3161 39.8787 21.8787C39.3161 22.4413 39 23.2044 39 24V40C39 40.7957 39.3161 41.5587 39.8787 42.1213C40.4413 42.6839 41.2043 43 42 43C42.7957 43 43.5587 42.6839 44.1213 42.1213C44.6839 41.5587 45 40.7957 45 40V24C45 23.2044 44.6839 22.4413 44.1213 21.8787C43.5587 21.3161 42.7957 21 42 21ZM52 17C51.2043 17 50.4413 17.3161 49.8787 17.8787C49.3161 18.4413 49 19.2044 49 20V44C49 44.7957 49.3161 45.5587 49.8787 46.1213C50.4413 46.6839 51.2043 47 52 47C52.7957 47 53.5587 46.6839 54.1213 46.1213C54.6839 45.5587 55 44.7957 55 44V20C55 19.2044 54.6839 18.4413 54.1213 17.8787C53.5587 17.3161 52.7957 17 52 17Z"
-        fill="currentColor"
-      />
-    </svg>
+      <div className="size-24 sm:size-28">
+        <AgentCharacter state={agentState} character={id} />
+      </div>
+      <span className="text-foreground text-lg font-bold">{name}</span>
+      <span className="text-muted-foreground max-w-[9rem] text-xs leading-4 text-balance">
+        {tagline}
+      </span>
+    </motion.button>
   );
 }
 
 interface WelcomeViewProps {
-  startButtonText: string;
-  onStartCall: () => void;
   stackReady: boolean;
   stackChildren: StackChild[];
   wakeWord: boolean;
+  availableLanguages: string[];
+  onSelectCharacter: (character: CharacterId, language: string) => void;
 }
 
 export const WelcomeView = ({
-  startButtonText,
-  onStartCall,
   stackReady,
   stackChildren,
   wakeWord,
+  availableLanguages,
+  onSelectCharacter,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
-  return (
-    <div ref={ref}>
-      <section className="bg-background flex flex-col items-center justify-center text-center">
-        <WelcomeImage />
+  const [language, setLanguage] = useState('en');
+  const [announcingId, setAnnouncingId] = useState<CharacterId | null>(null);
+  const [introDone, setIntroDone] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const cancelledRef = useRef(false);
 
-        <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
-          Chat live with your voice AI agent
+  // Ask for mic permission as soon as the page loads, not when a character
+  // is tapped — so the browser's "Allow microphone?" prompt is already out
+  // of the way by the time a call actually starts. Immediately stops the
+  // track again: this only exists to trigger the permission dialog early,
+  // not to hold the mic open before a call begins.
+  useEffect(() => {
+    navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((stream) => stream.getTracks().forEach((track) => track.stop()))
+      .catch((err: DOMException) => {
+        // NotAllowedError covers both "user just clicked Block" and "this
+        // origin is already blocked from a previous decision" — the latter
+        // means no prompt will ever show again until the site permission is
+        // reset by hand, so tell the child's grown-up exactly where to look
+        // rather than leaving the mic button silently stuck.
+        if (err.name === 'NotAllowedError') {
+          toastAlert({
+            title: 'Microphone is blocked',
+            description:
+              'This browser has blocked microphone access for this page, so it won’t ask again automatically. Click the icon left of the address bar, open Site settings, and set Microphone to Allow, then reload.',
+          });
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!stackReady) return;
+    cancelledRef.current = false;
+    const audioEl = audioRef.current;
+
+    async function fetchPreview(characterId: string): Promise<string | null> {
+      try {
+        const res = await fetch('/api/preview-voice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ character: characterId, language }),
+        });
+        if (!res.ok) throw new Error(`preview failed: ${res.status}`);
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      } catch {
+        return null;
+      }
+    }
+
+    async function playIntros() {
+      // Fetch all three up front (in parallel) rather than one at a time —
+      // they're cached server-side after the first-ever request anyway, so
+      // this is normally near-instant, and it means character 2 and 3 are
+      // already downloaded by the time character 1 finishes talking.
+      const urls = await Promise.all(CHARACTERS.map((c) => fetchPreview(c.id)));
+      if (cancelledRef.current) {
+        urls.forEach((url) => url && URL.revokeObjectURL(url));
+        return;
+      }
+
+      for (let i = 0; i < CHARACTERS.length; i++) {
+        if (cancelledRef.current) break;
+        const url = urls[i];
+        setAnnouncingId(CHARACTERS[i].id);
+        const audio = audioRef.current;
+        if (url && audio) {
+          audio.src = url;
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            audio.onended = done;
+            audio.onerror = done;
+            audio.play().catch(done);
+            // Safety net in case playback events never fire.
+            setTimeout(done, 8000);
+          });
+        }
+      }
+      urls.forEach((url) => url && URL.revokeObjectURL(url));
+      if (!cancelledRef.current) {
+        setAnnouncingId(null);
+        setIntroDone(true);
+      }
+    }
+
+    playIntros();
+    return () => {
+      cancelledRef.current = true;
+      audioEl?.pause();
+    };
+    // Re-runs (and replays intros) whenever the language changes, since each
+    // character's intro line/voice differs per language.
+  }, [stackReady, language]);
+
+  const handleSelect = (id: CharacterId) => {
+    cancelledRef.current = true;
+    audioRef.current?.pause();
+    setAnnouncingId(null);
+    onSelectCharacter(id, language);
+  };
+
+  return (
+    <div ref={ref} className="relative min-h-svh">
+      <PartyBackground />
+      <audio ref={audioRef} className="hidden" />
+
+      <section className="flex min-h-svh flex-col items-center justify-center px-6 text-center">
+        <h1 className="text-foreground max-w-sm text-3xl leading-tight font-extrabold text-balance sm:text-4xl">
+          Who do you want to play with?
+        </h1>
+        <p className="text-muted-foreground mt-2 max-w-xs text-base leading-6 text-balance">
+          {introDone ? 'Tap your favorite friend to start!' : 'Say hi to your storytime friends...'}
         </p>
 
         {stackReady ? (
           <>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={onStartCall}
-              className="mt-6 w-64 font-mono"
-            >
-              {startButtonText}
-            </Button>
+            <div className="mt-8 flex flex-wrap items-start justify-center gap-4">
+              {CHARACTERS.map((c) => (
+                <CharacterCard
+                  key={c.id}
+                  id={c.id}
+                  name={c.name}
+                  tagline={c.tagline}
+                  agentState={announcingId === c.id ? 'speaking' : 'listening'}
+                  onSelect={() => handleSelect(c.id)}
+                />
+              ))}
+            </div>
+            <LanguagePicker
+              language={language}
+              availableLanguages={availableLanguages}
+              onChange={setLanguage}
+            />
             {wakeWord && (
-              <p className="text-muted-foreground mt-3 text-sm">
-                Wake word is on — after connecting, say{' '}
-                <span className="text-foreground font-medium">“Hey LiveKit”</span> to wake the
-                assistant.
+              <p className="text-muted-foreground mt-4 text-sm">
+                Say <span className="text-foreground font-medium">“Hey LiveKit”</span> after
+                connecting to wake your friend up.
               </p>
             )}
           </>
@@ -106,21 +317,6 @@ export const WelcomeView = ({
           <StackStartupStatus services={stackChildren} />
         )}
       </section>
-
-      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">
-        <p className="text-muted-foreground max-w-prose pt-1 text-xs leading-5 font-normal text-pretty md:text-sm">
-          Need help getting set up? Check out the{' '}
-          <a
-            target="_blank"
-            rel="noopener noreferrer"
-            href="https://docs.livekit.io/agents/start/voice-ai/"
-            className="underline"
-          >
-            Voice AI quickstart
-          </a>
-          .
-        </p>
-      </div>
     </div>
   );
 };

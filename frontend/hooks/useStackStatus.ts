@@ -15,6 +15,9 @@ export interface StackStatus {
   ready: boolean;
   children: StackChild[];
   wakeWord: boolean;
+  /** Which languages the backend can actually speak right now — Telugu/Marathi
+   * only appear once the optional indic_tts child is enabled and running. */
+  languages: string[];
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -32,6 +35,7 @@ export function useStackStatus(): StackStatus {
     ready: false,
     children: [],
     wakeWord: false,
+    languages: ['en'],
   });
 
   useEffect(() => {
@@ -44,9 +48,14 @@ export function useStackStatus(): StackStatus {
         const res = await fetch('/api/status', { cache: 'no-store' });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = await res.json();
-        next = { ready: data.ready, children: data.children, wakeWord: !!data.wake_word };
+        next = {
+          ready: data.ready,
+          children: data.children,
+          wakeWord: !!data.wake_word,
+          languages: Array.isArray(data.languages) ? data.languages : ['en'],
+        };
       } catch {
-        next = { ready: true, children: [], wakeWord: false }; // fail open
+        next = { ready: true, children: [], wakeWord: false, languages: ['en'] }; // fail open
       }
       if (cancelled) return;
       setStatus(next);

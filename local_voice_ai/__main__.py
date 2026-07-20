@@ -19,11 +19,16 @@ from pathlib import Path
 
 import uvicorn
 
-from .api import build_app
+from .api import build_app, prewarm_character_previews
 from .config import Config
 from .supervisor import ChildSpec, Supervisor, configure_logging
 
 logger = logging.getLogger("main")
+
+# Strong references for fire-and-forget background tasks (e.g. the character
+# preview prewarm) — the event loop only holds a weak reference to tasks, so
+# without this they could be garbage-collected mid-flight.
+_background_tasks: set[asyncio.Task] = set()
 
 
 def _llama_cache_dir(env: dict[str, str]) -> Path:
@@ -269,6 +274,24 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
             )
         )
 
+    # --- Indic TTS (Telugu/Marathi, optional) -------------------------
+    if cfg.indic_tts_enabled:
+        specs.append(
+            ChildSpec(
+                name="indic_tts",
+                argv=[
+                    py, "-m", "local_voice_ai.services.indic_tts.server",
+                    "--host", "127.0.0.1",
+                    "--port", str(cfg.indic_tts_bind_port),
+                ],
+                ready_url=f"http://127.0.0.1:{cfg.indic_tts_bind_port}/v1/models",
+                # Two full model loads (Telugu + Marathi); measured ~11s and
+                # ~21s respectively on this hardware, but first-run download
+                # can add much more.
+                ready_timeout=600.0,
+            )
+        )
+
     # --- Agent worker ------------------------------------------------
     specs.append(
         ChildSpec(
@@ -288,9 +311,10 @@ async def _serve(cfg: Config) -> int:
     supervisor = Supervisor(specs)
 
     logger.info(
-        "supervisor managing %d children (livekit=%s llama=%s stt=%s tts=%s)",
+        "supervisor managing %d children (livekit=%s llama=%s stt=%s tts=%s indic_tts=%s)",
         len(specs),
         cfg.manage_livekit, cfg.manage_llama, cfg.manage_stt, cfg.manage_tts,
+        cfg.indic_tts_enabled,
     )
 
     status_provider = make_status_provider(supervisor, cfg)
@@ -347,6 +371,19 @@ async def _serve(cfg: Config) -> int:
         except (asyncio.CancelledError, Exception):
             pass
     elif startup_task in done:
+        # Fire-and-forget: warms the character-intro voice cache so the
+        # picker screen's first-ever load doesn't wait on Kokoro (see
+        # api.py::prewarm_character_previews). Not awaited — must not delay
+        # the "ready" banner below. The event loop only holds a weak
+        # reference to tasks, so a strong one is kept in _background_tasks
+        # (with a done-callback to drop it again) or this could be
+        # garbage-collected mid-flight.
+        preview_prewarm_task = asyncio.create_task(
+            prewarm_character_previews(cfg), name="preview-prewarm"
+        )
+        _background_tasks.add(preview_prewarm_task)
+        preview_prewarm_task.add_done_callback(_background_tasks.discard)
+
         # The line first-time users are looking for — make it unmissable.
         logger.info(
             "\n\n"

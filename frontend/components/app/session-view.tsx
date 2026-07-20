@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useSessionContext, useSessionMessages } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
+import type { CharacterId } from '@/components/app/agent-character';
 import { ChatTranscript } from '@/components/app/chat-transcript';
 import { PreConnectMessage } from '@/components/app/preconnect-message';
 import { TileLayout } from '@/components/app/tile-layout';
@@ -11,6 +12,7 @@ import {
   AgentControlBar,
   type ControlBarControls,
 } from '@/components/livekit/agent-control-bar/agent-control-bar';
+import { toastAlert } from '@/components/livekit/alert-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '../livekit/scroll-area/scroll-area';
 
@@ -58,10 +60,12 @@ export function Fade({ top = false, bottom = false, className }: FadeProps) {
 
 interface SessionViewProps {
   appConfig: AppConfig;
+  character: CharacterId;
 }
 
 export const SessionView = ({
   appConfig,
+  character,
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
@@ -106,7 +110,7 @@ export const SessionView = ({
       </div>
 
       {/* Tile Layout */}
-      <TileLayout chatOpen={chatOpen} />
+      <TileLayout chatOpen={chatOpen} character={character} />
 
       {/* Bottom */}
       <MotionBottom
@@ -123,6 +127,15 @@ export const SessionView = ({
             isConnected={session.isConnected}
             onDisconnect={session.end}
             onChatOpenChange={setChatOpen}
+            onDeviceError={({ error }) => {
+              toastAlert({
+                title: 'Microphone unavailable',
+                description:
+                  error.name === 'NotAllowedError'
+                    ? 'Microphone access is blocked for this page. Click the icon left of the address bar, open Site settings, and set Microphone to Allow, then reload.'
+                    : error.message,
+              });
+            }}
           />
         </div>
       </MotionBottom>

@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
+import type { CharacterId } from '@/components/app/agent-character';
 import { SessionView } from '@/components/app/session-view';
 import { WelcomeView } from '@/components/app/welcome-view';
 import { useStackStatus } from '@/hooks/useStackStatus';
@@ -30,10 +31,12 @@ const VIEW_MOTION_PROPS = {
 
 interface ViewControllerProps {
   appConfig: AppConfig;
+  character: CharacterId;
+  onSelectCharacter: (character: CharacterId, language: string) => void;
 }
 
-export function ViewController({ appConfig }: ViewControllerProps) {
-  const { isConnected, start } = useSessionContext();
+export function ViewController({ appConfig, character, onSelectCharacter }: ViewControllerProps) {
+  const { isConnected } = useSessionContext();
   const stackStatus = useStackStatus();
 
   return (
@@ -43,16 +46,21 @@ export function ViewController({ appConfig }: ViewControllerProps) {
         <MotionWelcomeView
           key="welcome"
           {...VIEW_MOTION_PROPS}
-          startButtonText={appConfig.startButtonText}
-          onStartCall={start}
+          onSelectCharacter={onSelectCharacter}
           stackReady={stackStatus.ready}
           stackChildren={stackStatus.children}
           wakeWord={stackStatus.wakeWord}
+          availableLanguages={stackStatus.languages}
         />
       )}
       {/* Session view */}
       {isConnected && (
-        <MotionSessionView key="session-view" {...VIEW_MOTION_PROPS} appConfig={appConfig} />
+        <MotionSessionView
+          key="session-view"
+          {...VIEW_MOTION_PROPS}
+          appConfig={appConfig}
+          character={character}
+        />
       )}
     </AnimatePresence>
   );

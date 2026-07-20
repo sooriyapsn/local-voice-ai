@@ -24,9 +24,9 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   pageTitle: 'Storytime Buddy',
   pageDescription: 'A friendly voice agent that tells stories and chats with your little one',
 
-  supportsChatInput: true,
-  supportsVideoInput: true,
-  supportsScreenShare: true,
+  supportsChatInput: false,
+  supportsVideoInput: false,
+  supportsScreenShare: false,
   isPreConnectBufferEnabled: true,
 
   logo: '/lk-logo.svg',
